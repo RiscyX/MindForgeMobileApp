@@ -9,22 +9,46 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [accessToken, setAccessToken] = useState(null);
   const [refreshToken, setRefreshToken] = useState(null);
+  const [tokenType, setTokenType] = useState('Bearer');
+  const [expiresIn, setExpiresIn] = useState(null);
+  const [refreshExpiresIn, setRefreshExpiresIn] = useState(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const refreshInFlightRef = useRef(null);
   const sessionGenerationRef = useRef(0);
+  const accessTokenRef = useRef(null);
   const refreshTokenRef = useRef(null);
+  const tokenTypeRef = useRef('Bearer');
+  const expiresInRef = useRef(null);
+  const refreshExpiresInRef = useRef(null);
   const userRef = useRef(null);
 
-  const persistSession = useCallback(async ({ nextAccessToken, nextRefreshToken, nextUser }) => {
+  const persistSession = useCallback(async ({
+    nextAccessToken,
+    nextRefreshToken,
+    nextTokenType,
+    nextExpiresIn,
+    nextRefreshExpiresIn,
+    nextUser,
+  }) => {
     setAccessToken(nextAccessToken);
     setRefreshToken(nextRefreshToken);
+    setTokenType(nextTokenType || 'Bearer');
+    setExpiresIn(nextExpiresIn ?? null);
+    setRefreshExpiresIn(nextRefreshExpiresIn ?? null);
     setUser(nextUser);
+    accessTokenRef.current = nextAccessToken;
     refreshTokenRef.current = nextRefreshToken;
+    tokenTypeRef.current = nextTokenType || 'Bearer';
+    expiresInRef.current = nextExpiresIn ?? null;
+    refreshExpiresInRef.current = nextRefreshExpiresIn ?? null;
     userRef.current = nextUser;
 
     await tokenStorage.saveSession({
       accessToken: nextAccessToken,
       refreshToken: nextRefreshToken,
+      tokenType: nextTokenType || 'Bearer',
+      expiresIn: nextExpiresIn ?? null,
+      refreshExpiresIn: nextRefreshExpiresIn ?? null,
       user: nextUser,
     });
   }, []);
@@ -33,16 +57,56 @@ export function AuthProvider({ children }) {
     const root = response || {};
     const tokens = root.tokens || root.data?.tokens || null;
 
-    const nextAccessTokenRaw = root.access_token || tokens?.access_token || tokens?.accessToken || null;
-    const nextRefreshTokenRaw = root.refresh_token || tokens?.refresh_token || tokens?.refreshToken || null;
+    const nextAccessTokenRaw = root.access_token
+      || root.accessToken
+      || root.data?.access_token
+      || root.data?.accessToken
+      || tokens?.access_token
+      || tokens?.accessToken
+      || null;
+    const nextRefreshTokenRaw = root.refresh_token
+      || root.refreshToken
+      || root.data?.refresh_token
+      || root.data?.refreshToken
+      || tokens?.refresh_token
+      || tokens?.refreshToken
+      || null;
+
+    const nextTokenTypeRaw = root.token_type
+      || root.tokenType
+      || root.data?.token_type
+      || root.data?.tokenType
+      || tokens?.token_type
+      || tokens?.tokenType
+      || 'Bearer';
+    const nextExpiresInRaw = root.expires_in
+      || root.expiresIn
+      || root.data?.expires_in
+      || root.data?.expiresIn
+      || tokens?.expires_in
+      || tokens?.expiresIn
+      || null;
+    const nextRefreshExpiresInRaw = root.refresh_expires_in
+      || root.refreshExpiresIn
+      || root.data?.refresh_expires_in
+      || root.data?.refreshExpiresIn
+      || tokens?.refresh_expires_in
+      || tokens?.refreshExpiresIn
+      || null;
 
     const nextAccessToken = typeof nextAccessTokenRaw === 'string' ? nextAccessTokenRaw.trim() : nextAccessTokenRaw;
     const nextRefreshToken = typeof nextRefreshTokenRaw === 'string' ? nextRefreshTokenRaw.trim() : nextRefreshTokenRaw;
+    const nextTokenType = typeof nextTokenTypeRaw === 'string' && nextTokenTypeRaw.trim() ? nextTokenTypeRaw.trim() : 'Bearer';
+    const parsedExpiresIn = Number(nextExpiresInRaw);
+    const parsedRefreshExpiresIn = Number(nextRefreshExpiresInRaw);
     const nextUser = root.user || root.data?.user || null;
 
     return {
       nextAccessToken,
       nextRefreshToken,
+      nextTokenType,
+      nextExpiresIn: Number.isFinite(parsedExpiresIn) ? parsedExpiresIn : null,
+      nextRefreshExpiresIn: Number.isFinite(parsedRefreshExpiresIn) ? parsedRefreshExpiresIn : null,
       nextUser,
     };
   }, []);
@@ -50,8 +114,15 @@ export function AuthProvider({ children }) {
   const clearSession = useCallback(async () => {
     setAccessToken(null);
     setRefreshToken(null);
+    setTokenType('Bearer');
+    setExpiresIn(null);
+    setRefreshExpiresIn(null);
     setUser(null);
+    accessTokenRef.current = null;
     refreshTokenRef.current = null;
+    tokenTypeRef.current = 'Bearer';
+    expiresInRef.current = null;
+    refreshExpiresInRef.current = null;
     userRef.current = null;
     await tokenStorage.clearSession();
   }, []);
@@ -72,6 +143,9 @@ export function AuthProvider({ children }) {
       const extracted = extractSessionFromAuthResponse(response);
       const nextAccessToken = extracted.nextAccessToken;
       const nextRefreshToken = extracted.nextRefreshToken || token;
+      const nextTokenType = extracted.nextTokenType || tokenTypeRef.current || 'Bearer';
+      const nextExpiresIn = extracted.nextExpiresIn;
+      const nextRefreshExpiresIn = extracted.nextRefreshExpiresIn;
       const nextUser = extracted.nextUser || userRef.current;
 
       if (!nextAccessToken) {
@@ -85,12 +159,18 @@ export function AuthProvider({ children }) {
       await persistSession({
         nextAccessToken,
         nextRefreshToken,
+        nextTokenType,
+        nextExpiresIn,
+        nextRefreshExpiresIn,
         nextUser,
       });
 
       return {
         accessToken: nextAccessToken,
         refreshToken: nextRefreshToken,
+        tokenType: nextTokenType,
+        expiresIn: nextExpiresIn,
+        refreshExpiresIn: nextRefreshExpiresIn,
         user: nextUser,
       };
     })();
@@ -114,8 +194,15 @@ export function AuthProvider({ children }) {
         setUser(stored.user || null);
         setAccessToken(stored.accessToken || null);
         setRefreshToken(stored.refreshToken || null);
+        setTokenType(stored.tokenType || 'Bearer');
+        setExpiresIn(stored.expiresIn ?? null);
+        setRefreshExpiresIn(stored.refreshExpiresIn ?? null);
         userRef.current = stored.user || null;
+        accessTokenRef.current = stored.accessToken || null;
         refreshTokenRef.current = stored.refreshToken || null;
+        tokenTypeRef.current = stored.tokenType || 'Bearer';
+        expiresInRef.current = stored.expiresIn ?? null;
+        refreshExpiresInRef.current = stored.refreshExpiresIn ?? null;
 
         const refreshed = await refresh(stored.refreshToken);
         if (refreshed?.accessToken) {
@@ -126,14 +213,18 @@ export function AuthProvider({ children }) {
               await persistSession({
                 nextAccessToken: refreshed.accessToken,
                 nextRefreshToken: refreshed.refreshToken,
+                nextTokenType: refreshed.tokenType,
+                nextExpiresIn: refreshed.expiresIn,
+                nextRefreshExpiresIn: refreshed.refreshExpiresIn,
                 nextUser: meUser,
               });
             }
-          } catch {
-            // Me endpoint can lag behind during backend rollout.
+          } catch (error) {
+            console.warn('[auth/bootstrap] /auth/me failed:', error?.message || error);
           }
         }
-      } catch {
+      } catch (error) {
+        console.warn('[auth/bootstrap] session restore failed:', error?.message || error);
         await clearSession();
       } finally {
         setIsBootstrapping(false);
@@ -143,12 +234,15 @@ export function AuthProvider({ children }) {
     bootstrap();
   }, [clearSession, persistSession, refresh]);
 
-  const login = useCallback(async ({ email, password, deviceName }) => {
-    const response = await loginRequest({ email, password, deviceName });
+  const login = useCallback(async ({ email, password }) => {
+    const response = await loginRequest({ email, password });
 
     const extracted = extractSessionFromAuthResponse(response);
     const nextAccessToken = extracted.nextAccessToken;
     const nextRefreshToken = extracted.nextRefreshToken;
+    const nextTokenType = extracted.nextTokenType;
+    const nextExpiresIn = extracted.nextExpiresIn;
+    const nextRefreshExpiresIn = extracted.nextRefreshExpiresIn;
     const nextUser = extracted.nextUser;
 
     if (!nextAccessToken || !nextRefreshToken) {
@@ -159,6 +253,9 @@ export function AuthProvider({ children }) {
     await persistSession({
       nextAccessToken,
       nextRefreshToken,
+      nextTokenType,
+      nextExpiresIn,
+      nextRefreshExpiresIn,
       nextUser,
     });
 
@@ -183,25 +280,48 @@ export function AuthProvider({ children }) {
       if (tokenSnapshot.accessToken || tokenSnapshot.refreshToken) {
         await logoutRequest(tokenSnapshot);
       }
-    } catch {
-      // Local logout already completed.
+    } catch (error) {
+      console.warn('[auth/logout] backend logout failed:', error?.message || error);
     }
   }, [accessToken, clearSession, refreshToken]);
 
   const authFetch = useCallback(async (endpoint, options = {}) => {
-    const makeRequest = (token) => apiRequest(endpoint, { ...options, accessToken: token });
+    const stateToken = typeof accessToken === 'string' ? accessToken.trim() : '';
+    const normalizedStateToken = stateToken.replace(/^bearer\s+/i, '');
+    const stored = !normalizedStateToken ? await tokenStorage.loadSession() : null;
+    const fallbackToken = typeof stored?.accessToken === 'string' ? stored.accessToken.trim().replace(/^bearer\s+/i, '') : '';
+    const tokenForRequest = normalizedStateToken || fallbackToken;
+
+    if (!tokenForRequest) {
+      await clearSession();
+      throw new ApiError('Missing access token. Please log in again.', 401, null);
+    }
+
+    const makeRequest = (token) => apiRequest(endpoint, {
+      ...options,
+      accessToken: token,
+    });
 
     try {
-      return await makeRequest(accessToken);
+      return await makeRequest(tokenForRequest);
     } catch (error) {
       if (!(error instanceof ApiError) || error.status !== 401) {
         throw error;
       }
 
-      const refreshed = await refresh();
-      return makeRequest(refreshed.accessToken);
+      try {
+        const refreshed = await refresh();
+        return await makeRequest(refreshed.accessToken);
+      } catch (refreshError) {
+        await clearSession();
+        throw new ApiError(
+          refreshError?.message || 'Session expired. Please log in again.',
+          refreshError?.status || 401,
+          refreshError?.data || null,
+        );
+      }
     }
-  }, [accessToken, refresh]);
+  }, [accessToken, clearSession, refresh]);
 
   const setUserProfile = useCallback(async (nextUser) => {
     const mergedUser = {
@@ -213,15 +333,21 @@ export function AuthProvider({ children }) {
     userRef.current = mergedUser;
 
     await tokenStorage.saveSession({
-      accessToken,
+      accessToken: accessTokenRef.current,
       refreshToken: refreshTokenRef.current,
+      tokenType: tokenTypeRef.current,
+      expiresIn: expiresInRef.current,
+      refreshExpiresIn: refreshExpiresInRef.current,
       user: mergedUser,
     });
-  }, [accessToken]);
+  }, []);
 
   const value = useMemo(() => ({
     user,
     accessToken,
+    tokenType,
+    expiresIn,
+    refreshExpiresIn,
     isAuthenticated: Boolean(accessToken),
     isBootstrapping,
     login,
@@ -230,7 +356,20 @@ export function AuthProvider({ children }) {
     refresh,
     authFetch,
     setUserProfile,
-  }), [accessToken, authFetch, isBootstrapping, login, logout, refresh, register, setUserProfile, user]);
+  }), [
+    accessToken,
+    authFetch,
+    expiresIn,
+    isBootstrapping,
+    login,
+    logout,
+    refresh,
+    refreshExpiresIn,
+    register,
+    setUserProfile,
+    tokenType,
+    user,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -257,6 +257,28 @@ export default function ProfileScreen({ user, onLogout, onGoTests, onGoStats, on
             <Text className="text-mf-secondary text-sm font-solway mt-2">{t('profile.subtitle')}</Text>
           </View>
 
+          <View className="mt-5 rounded-2xl border border-mf-secondary/25 bg-mf-secondary/10 p-3">
+            <Text className="text-mf-secondary text-sm font-solway-bold mb-2">{t('profile.appLanguage')}</Text>
+            <View className="w-full rounded-xl border border-mf-secondary/25 bg-mf-bg/70 p-1.5 flex-row">
+              <TouchableOpacity
+                className={`flex-1 rounded-lg py-2.5 items-center ${language === 'en' ? 'bg-mf-primary' : 'bg-transparent'}`}
+                onPress={() => setLanguage('en')}
+              >
+                <Text className={`font-solway-bold text-sm ${language === 'en' ? 'text-mf-text' : 'text-mf-secondary'}`}>
+                  {t('common.english')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className={`flex-1 rounded-lg py-2.5 items-center ${language === 'hu' ? 'bg-mf-primary' : 'bg-transparent'}`}
+                onPress={() => setLanguage('hu')}
+              >
+                <Text className={`font-solway-bold text-sm ${language === 'hu' ? 'text-mf-text' : 'text-mf-secondary'}`}>
+                  {t('common.hungarian')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <View className="mt-8 items-center">
             {resolvedAvatarUrl ? (
               <Image
@@ -306,27 +328,6 @@ export default function ProfileScreen({ user, onLogout, onGoTests, onGoStats, on
               <Text className="text-mf-text font-solway mt-1">{profile?.role_name || t('profile.notAvailable')}</Text>
             </View>
 
-            <View className="mt-6">
-              <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mb-2">{t('profile.appLanguage')}</Text>
-              <View className="w-full rounded-2xl border border-mf-secondary/30 bg-mf-bg/80 p-2 flex-row">
-                <TouchableOpacity
-                  className={`flex-1 rounded-xl py-3 items-center ${language === 'en' ? 'bg-mf-primary' : 'bg-transparent'}`}
-                  onPress={() => setLanguage('en')}
-                >
-                  <Text className={`font-solway-bold text-xs uppercase tracking-widest ${language === 'en' ? 'text-mf-text' : 'text-mf-secondary'}`}>
-                    EN
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className={`flex-1 rounded-xl py-3 items-center ${language === 'hu' ? 'bg-mf-primary' : 'bg-transparent'}`}
-                  onPress={() => setLanguage('hu')}
-                >
-                  <Text className={`font-solway-bold text-xs uppercase tracking-widest ${language === 'hu' ? 'text-mf-text' : 'text-mf-secondary'}`}>
-                    HU
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
           </View>
 
           {error ? <Text className="text-red-300 font-solway text-sm mt-4">{error}</Text> : null}
