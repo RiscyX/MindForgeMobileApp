@@ -1,19 +1,49 @@
-import { apiRequest } from './httpClient';
+import { API_BASE_URL, ApiError, apiRequest } from './httpClient';
 
-export const loginRequest = async ({ email, password, deviceName = 'MindForge Mobile App' }) => {
-  return apiRequest('/auth/login', {
-    method: 'POST',
-    body: {
-      email: email.trim().toLowerCase(),
-      password,
-      device_name: deviceName,
-    },
+const AUTH_JSON_HEADERS = {
+  Accept: 'application/json',
+  'Content-Type': 'application/json',
+};
+
+const buildLoginError = (error) => {
+  const status = error instanceof ApiError ? error.status : null;
+  const responseBody = error instanceof ApiError ? error.data : null;
+  const networkMessage = error?.message || 'Unknown network error';
+
+  console.error('[auth/login] failed', {
+    requestUrl: `${API_BASE_URL}/auth/login`,
+    statusCode: status,
+    responseBody: responseBody ? JSON.stringify(responseBody) : null,
+    networkError: networkMessage,
   });
+
+  if (error instanceof ApiError) {
+    return new ApiError(error.message || 'Login failed', error.status, error.data);
+  }
+
+  return new ApiError(networkMessage, 0, null);
+};
+
+export const loginRequest = async ({ email, password }) => {
+  try {
+    return await apiRequest('/auth/login', {
+      method: 'POST',
+      headers: AUTH_JSON_HEADERS,
+      body: {
+        email: email.trim().toLowerCase(),
+        password,
+        lang: 'hu',
+      },
+    });
+  } catch (error) {
+    throw buildLoginError(error);
+  }
 };
 
 export const registerRequest = async ({ email, password, passwordConfirm, lang = 'en', deviceName = 'MindForge Mobile App' }) => {
   return apiRequest('/auth/register', {
     method: 'POST',
+    headers: AUTH_JSON_HEADERS,
     body: {
       email: email.trim().toLowerCase(),
       password,
@@ -27,6 +57,7 @@ export const registerRequest = async ({ email, password, passwordConfirm, lang =
 export const refreshRequest = async ({ refreshToken }) => {
   return apiRequest('/auth/refresh', {
     method: 'POST',
+    headers: AUTH_JSON_HEADERS,
     body: {
       refresh_token: refreshToken,
     },
@@ -37,6 +68,7 @@ export const logoutRequest = async ({ accessToken, refreshToken }) => {
   return apiRequest('/auth/logout', {
     method: 'POST',
     accessToken,
+    headers: AUTH_JSON_HEADERS,
     body: refreshToken ? { refresh_token: refreshToken } : undefined,
   });
 };
@@ -45,5 +77,6 @@ export const meRequest = async ({ accessToken }) => {
   return apiRequest('/auth/me', {
     method: 'GET',
     accessToken,
+    headers: AUTH_JSON_HEADERS,
   });
 };

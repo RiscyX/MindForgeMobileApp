@@ -7,7 +7,12 @@ import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path } from 'react-native-svg';
 import { useLanguage } from '../hooks/useLanguage';
 import { useAuth } from '../hooks/useAuth';
-import { applyAiRequest, createAiTestGenerationRequest, getAiRequestStatus } from '../services/creatorAiApi';
+import {
+  applyAiRequest,
+  createAiTestGenerationRequest,
+  fetchCreatorTestMetadataRequest,
+  getAiRequestStatus,
+} from '../services/creatorAiApi';
 
 export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
   const { t, language } = useLanguage();
@@ -16,8 +21,22 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [customPromptTouched, setCustomPromptTouched] = useState(false);
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+  const [selectedDifficultyId, setSelectedDifficultyId] = useState(null);
+  const [categoryQuery, setCategoryQuery] = useState('');
+  const [difficultyQuery, setDifficultyQuery] = useState('');
+  const [isCategoryListOpen, setIsCategoryListOpen] = useState(false);
+  const [isDifficultyListOpen, setIsDifficultyListOpen] = useState(false);
+  const [metadataTouched, setMetadataTouched] = useState(false);
+  const [metadataState, setMetadataState] = useState({
+    loading: false,
+    errorMessage: null,
+    categories: [],
+    difficulties: [],
+  });
 
   const isCustomPromptValid = customPrompt.trim().length > 0;
+  const isMetadataSelectionValid = Boolean(selectedCategoryId) && Boolean(selectedDifficultyId);
 
   const [generation, setGeneration] = useState({
     stage: 'idle', // idle | creating | polling | applying | failed
@@ -41,6 +60,43 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
     return generation.requestStatus ? String(generation.requestStatus) : null;
   }, [generation.requestStatus, t]);
 
+  const selectedCategory = useMemo(
+    () => metadataState.categories.find((item) => Number(item.id) === Number(selectedCategoryId)) || null,
+    [metadataState.categories, selectedCategoryId],
+  );
+
+  const selectedDifficulty = useMemo(
+    () => metadataState.difficulties.find((item) => Number(item.id) === Number(selectedDifficultyId)) || null,
+    [metadataState.difficulties, selectedDifficultyId],
+  );
+
+  const matchingCategories = useMemo(() => {
+    const query = categoryQuery.trim().toLowerCase();
+    if (!query) {
+      return metadataState.categories;
+    }
+    return metadataState.categories.filter((item) => String(item.name || '').toLowerCase().includes(query));
+  }, [categoryQuery, metadataState.categories]);
+
+  const matchingDifficulties = useMemo(() => {
+    const query = difficultyQuery.trim().toLowerCase();
+    if (!query) {
+      return metadataState.difficulties;
+    }
+    return metadataState.difficulties.filter((item) => String(item.name || '').toLowerCase().includes(query));
+  }, [difficultyQuery, metadataState.difficulties]);
+
+  const mapApiErrorMessage = useCallback((error, fallbackMessage) => {
+    const apiCode = String(error?.data?.error?.code || '').toUpperCase();
+    if (apiCode === 'CATEGORY_REQUIRED') return t('createTest.errorCategoryRequired');
+    if (apiCode === 'DIFFICULTY_REQUIRED') return t('createTest.errorDifficultyRequired');
+    if (apiCode === 'CATEGORY_INVALID') return t('createTest.errorInvalidCategory');
+    if (apiCode === 'DIFFICULTY_INVALID') return t('createTest.errorInvalidDifficulty');
+
+    const apiMessage = error?.data?.error?.message || error?.data?.message;
+    return apiMessage || error?.message || fallbackMessage;
+  }, [t]);
+
   useEffect(() => {
     if (language) {
       setEditLanguage(language);
@@ -49,6 +105,101 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
       pollActiveRef.current = false;
     };
   }, [language]);
+
+  const loadMetadata = useCallback(async () => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    setMetadataState((prev) => ({ ...prev, loading: true, errorMessage: null }));
+    try {
+      const payload = await fetchCreatorTestMetadataRequest({ authFetch, language });
+      const categories = Array.isArray(payload?.categories) ? payload.categories : [];
+      const difficulties = Array.isArray(payload?.difficulties) ? payload.difficulties : [];
+
+      if (!categories.length || !difficulties.length) {
+        throw new Error(t('createTest.metadataLoadFailed'));
+      }
+
+      setMetadataState({ loading: false, errorMessage: null, categories, difficulties });
+    } catch (error) {
+      setMetadataState((prev) => ({
+        ...prev,
+        loading: false,
+        errorMessage: mapApiErrorMessage(error, t('createTest.metadataLoadFailed')),
+      }));
+    }
+  }, [authFetch, isAuthenticated, language, mapApiErrorMessage, t]);
+
+  useEffect(() => {
+    loadMetadata();
+  }, [loadMetadata]);
+
+  useEffect(() => {
+    if (selectedCategory) {
+      setCategoryQuery(String(selectedCategory.name));
+      return;
+    }
+    if (selectedCategoryId !== null) {
+      setSelectedCategoryId(null);
+      setCategoryQuery('');
+    }
+  }, [selectedCategory, selectedCategoryId]);
+
+  useEffect(() => {
+    if (selectedDifficulty) {
+      setDifficultyQuery(String(selectedDifficulty.name));
+      return;
+    }
+    if (selectedDifficultyId !== null) {
+      setSelectedDifficultyId(null);
+      setDifficultyQuery('');
+    }
+  }, [selectedDifficulty, selectedDifficultyId]);
+
+  const handleCategoryInputChange = useCallback((text) => {
+    const value = String(text || '');
+    setCategoryQuery(value);
+    setIsCategoryListOpen(true);
+
+    if (!selectedCategory) {
+      return;
+    }
+
+    const sameAsSelected = value.trim().toLowerCase() === String(selectedCategory.name || '').trim().toLowerCase();
+    if (!sameAsSelected) {
+      setSelectedCategoryId(null);
+    }
+  }, [selectedCategory]);
+
+  const handleDifficultyInputChange = useCallback((text) => {
+    const value = String(text || '');
+    setDifficultyQuery(value);
+    setIsDifficultyListOpen(true);
+
+    if (!selectedDifficulty) {
+      return;
+    }
+
+    const sameAsSelected = value.trim().toLowerCase() === String(selectedDifficulty.name || '').trim().toLowerCase();
+    if (!sameAsSelected) {
+      setSelectedDifficultyId(null);
+    }
+  }, [selectedDifficulty]);
+
+  const handleCategoryPick = useCallback((item) => {
+    setSelectedCategoryId(Number(item.id));
+    setCategoryQuery(String(item.name || ''));
+    setIsCategoryListOpen(false);
+    setMetadataTouched(true);
+  }, []);
+
+  const handleDifficultyPick = useCallback((item) => {
+    setSelectedDifficultyId(Number(item.id));
+    setDifficultyQuery(String(item.name || ''));
+    setIsDifficultyListOpen(false);
+    setMetadataTouched(true);
+  }, []);
 
   const resolveDraftLangKey = useCallback((d, langCode) => {
     if (!d || typeof d !== 'object') return null;
@@ -262,7 +413,13 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
 
   const handleGenerate = useCallback(async () => {
     setCustomPromptTouched(true);
+    setMetadataTouched(true);
+    setIsCategoryListOpen(false);
+    setIsDifficultyListOpen(false);
     if (!isCustomPromptValid) {
+      return;
+    }
+    if (!isMetadataSelectionValid) {
       return;
     }
 
@@ -283,6 +440,9 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
         prompt: customPrompt,
         images: imageAssets,
         language,
+        categoryId: selectedCategoryId,
+        difficultyId: selectedDifficultyId,
+        isPublic: true,
       });
 
       const requestId = created?.ai_request?.id;
@@ -330,9 +490,8 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
       }
     } catch (e) {
       const status = e?.status;
-      const apiMessage = e?.data?.error?.message || e?.data?.message;
       const apiCode = e?.data?.error?.code;
-      const message = apiMessage || e?.message || 'Request failed.';
+      const message = mapApiErrorMessage(e, 'Request failed.');
 
       if (status === 401) {
         try {
@@ -344,7 +503,20 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
 
       setGeneration({ stage: 'failed', requestId: null, requestStatus: null, errorMessage: apiCode ? `${message} (${apiCode})` : message });
     }
-  }, [authFetch, customPrompt, imageAssets, isAuthenticated, isCustomPromptValid, language, logout, onOpenTestDetails, t]);
+  }, [
+    authFetch,
+    customPrompt,
+    imageAssets,
+    isAuthenticated,
+    isCustomPromptValid,
+    isMetadataSelectionValid,
+    language,
+    logout,
+    mapApiErrorMessage,
+    selectedCategoryId,
+    selectedDifficultyId,
+    t,
+  ]);
 
   const handleApplyDraft = useCallback(async () => {
     if (!generation.requestId) {
@@ -365,12 +537,11 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
         onOpenTestDetails(testId);
       }
     } catch (e) {
-      const apiMessage = e?.data?.error?.message || e?.data?.message;
       const apiCode = e?.data?.error?.code;
-      const message = apiMessage || e?.message || 'Apply failed.';
+      const message = mapApiErrorMessage(e, 'Apply failed.');
       setGeneration((prev) => ({ ...prev, stage: 'failed', errorMessage: apiCode ? `${message} (${apiCode})` : message }));
     }
-  }, [authFetch, draft, generation.requestId, onOpenTestDetails]);
+  }, [authFetch, draft, generation.requestId, mapApiErrorMessage, onOpenTestDetails]);
 
   return (
     <View className="flex-1 bg-transparent">
@@ -423,6 +594,114 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
 
             {customPromptTouched && !isCustomPromptValid ? (
               <Text className="text-red-300 font-solway mt-2">{t('createTest.customPromptRequired')}</Text>
+            ) : null}
+          </View>
+
+          <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5">
+            <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mb-2">
+              {t('createTest.categoryLabel')}
+            </Text>
+            <View className="w-full rounded-2xl border border-mf-secondary/30 bg-mf-bg/80 px-3 py-2">
+              <TextInput
+                className="w-full text-mf-text font-solway"
+                value={categoryQuery}
+                onChangeText={handleCategoryInputChange}
+                onFocus={() => {
+                  setIsCategoryListOpen(true);
+                  setIsDifficultyListOpen(false);
+                }}
+                placeholder={t('createTest.categorySearchPlaceholder')}
+                placeholderTextColor="#8a89a2"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            {isCategoryListOpen ? (
+              <View className="mt-2 rounded-xl border border-mf-secondary/30 bg-mf-bg/95 p-2 max-h-44">
+                <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                  {matchingCategories.length > 0 ? (
+                    matchingCategories.map((category) => (
+                      <TouchableOpacity
+                        key={`cat-option-${category.id}`}
+                        className={`mb-2 px-3 py-2 rounded-lg border ${selectedCategoryId === category.id ? 'bg-mf-primary border-mf-primary' : 'bg-mf-secondary/10 border-mf-secondary/30'}`}
+                        onPress={() => handleCategoryPick(category)}
+                      >
+                        <Text className={`font-solway-bold text-xs uppercase tracking-wider ${selectedCategoryId === category.id ? 'text-mf-text' : 'text-mf-secondary'}`}>
+                          {category.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <Text className="text-mf-secondary font-solway text-sm px-2 py-2">{t('createTest.noCategoryMatches')}</Text>
+                  )}
+                </ScrollView>
+              </View>
+            ) : null}
+
+            {metadataTouched && !selectedCategoryId ? (
+              <Text className="text-red-300 font-solway mt-2">{t('createTest.categoryRequired')}</Text>
+            ) : null}
+
+            <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mt-4 mb-2">
+              {t('createTest.difficultyLabel')}
+            </Text>
+            <View className="w-full rounded-2xl border border-mf-secondary/30 bg-mf-bg/80 px-3 py-2">
+              <TextInput
+                className="w-full text-mf-text font-solway"
+                value={difficultyQuery}
+                onChangeText={handleDifficultyInputChange}
+                onFocus={() => {
+                  setIsDifficultyListOpen(true);
+                  setIsCategoryListOpen(false);
+                }}
+                placeholder={t('createTest.difficultySearchPlaceholder')}
+                placeholderTextColor="#8a89a2"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            {isDifficultyListOpen ? (
+              <View className="mt-2 rounded-xl border border-mf-secondary/30 bg-mf-bg/95 p-2 max-h-44">
+                <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                  {matchingDifficulties.length > 0 ? (
+                    matchingDifficulties.map((difficulty) => (
+                      <TouchableOpacity
+                        key={`diff-option-${difficulty.id}`}
+                        className={`mb-2 px-3 py-2 rounded-lg border ${selectedDifficultyId === difficulty.id ? 'bg-mf-primary border-mf-primary' : 'bg-mf-secondary/10 border-mf-secondary/30'}`}
+                        onPress={() => handleDifficultyPick(difficulty)}
+                      >
+                        <Text className={`font-solway-bold text-xs uppercase tracking-wider ${selectedDifficultyId === difficulty.id ? 'text-mf-text' : 'text-mf-secondary'}`}>
+                          {difficulty.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <Text className="text-mf-secondary font-solway text-sm px-2 py-2">{t('createTest.noDifficultyMatches')}</Text>
+                  )}
+                </ScrollView>
+              </View>
+            ) : null}
+
+            {metadataTouched && !selectedDifficultyId ? (
+              <Text className="text-red-300 font-solway mt-2">{t('createTest.difficultyRequired')}</Text>
+            ) : null}
+
+            {metadataState.loading ? (
+              <Text className="text-mf-secondary font-solway mt-3">{t('createTest.metadataLoading')}</Text>
+            ) : null}
+
+            {metadataState.errorMessage ? (
+              <>
+                <Text className="text-red-300 font-solway mt-3">{metadataState.errorMessage}</Text>
+                <TouchableOpacity
+                  className="mt-3 bg-mf-secondary/10 py-3 rounded-xl items-center border border-mf-secondary/30"
+                  onPress={loadMetadata}
+                >
+                  <Text className="text-mf-text font-solway-bold text-xs uppercase tracking-widest">{t('createTest.retryMetadataLoad')}</Text>
+                </TouchableOpacity>
+              </>
             ) : null}
           </View>
 
@@ -496,8 +775,8 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
             <TouchableOpacity
               className="bg-mf-primary py-4 rounded-xl items-center shadow-lg shadow-mf-primary/30"
               onPress={handleGenerate}
-              disabled={generation.stage === 'creating' || generation.stage === 'polling' || generation.stage === 'applying'}
-              style={{ opacity: generation.stage === 'creating' || generation.stage === 'polling' || generation.stage === 'applying' ? 0.7 : 1 }}
+              disabled={generation.stage === 'creating' || generation.stage === 'polling' || generation.stage === 'applying' || metadataState.loading}
+              style={{ opacity: generation.stage === 'creating' || generation.stage === 'polling' || generation.stage === 'applying' || metadataState.loading ? 0.7 : 1 }}
             >
               {generation.stage === 'creating' || generation.stage === 'polling' || generation.stage === 'applying' ? (
                 <View className="flex-row items-center">

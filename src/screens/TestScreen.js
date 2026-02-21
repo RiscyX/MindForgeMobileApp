@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
+import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Easing, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +18,14 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
   const [answersByQuestionId, setAnswersByQuestionId] = useState({});
   const [mode, setMode] = useState('quiz');
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [activeMatchingLeftId, setActiveMatchingLeftId] = useState(null);
+  const [showConnections, setShowConnections] = useState(true);
+  const [showMatchingOverview, setShowMatchingOverview] = useState(false);
+  const [matchingCanvasLayout, setMatchingCanvasLayout] = useState(null);
+  const [matchingLeftColumnLayout, setMatchingLeftColumnLayout] = useState(null);
+  const [matchingRightColumnLayout, setMatchingRightColumnLayout] = useState(null);
+  const [matchingLeftLayouts, setMatchingLeftLayouts] = useState({});
+  const [matchingRightLayouts, setMatchingRightLayouts] = useState({});
   const isTransitioningRef = useRef(false);
 
   const [attemptSummary, setAttemptSummary] = useState(null);
@@ -208,7 +217,264 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
     return type.includes('text') || type.includes('free');
   }, [currentQuestion?.type]);
 
-  const canGoNext = Boolean(currentQuestion && (isTextQuestion ? selectedText.trim().length > 0 : selectedAnswerId));
+  const isMatchingQuestion = useMemo(() => {
+    const type = (currentQuestion?.type || '').toString().toLowerCase();
+    return type.includes('matching');
+  }, [currentQuestion?.type]);
+
+  const normalizePairs = useCallback((pairs) => {
+    if (!pairs || typeof pairs !== 'object') {
+      return {};
+    }
+
+    return Object.entries(pairs).reduce((acc, [leftId, rightId]) => {
+      const normalizedLeft = String(leftId);
+      const normalizedRight = rightId === null || rightId === undefined || rightId === '' ? null : String(rightId);
+      if (normalizedLeft && normalizedRight) {
+        acc[normalizedLeft] = normalizedRight;
+      }
+      return acc;
+    }, {});
+  }, []);
+
+  const matchingModel = useMemo(() => {
+    if (!isMatchingQuestion || !currentQuestion) {
+      return { left: [], right: [], correctPairs: {} };
+    }
+
+    const fromReview = currentQuestion?.matching;
+    if (fromReview && Array.isArray(fromReview.left) && Array.isArray(fromReview.right)) {
+      return {
+        left: fromReview.left.map((item) => ({ id: String(item?.id), content: String(item?.content || '') })).filter((item) => item.id),
+        right: fromReview.right.map((item) => ({ id: String(item?.id), content: String(item?.content || '') })).filter((item) => item.id),
+        correctPairs: normalizePairs(fromReview.correct_pairs || {}),
+      };
+    }
+
+    const answers = Array.isArray(currentQuestion.answers) ? currentQuestion.answers : [];
+    const left = [];
+    const right = [];
+    const leftByGroup = {};
+    const rightByGroup = {};
+
+    answers.forEach((answer, index) => {
+      const id = String(answer?.id || '');
+      if (!id) {
+        return;
+      }
+      const content = String(answer?.content || '');
+      const sideRaw = String(answer?.match_side || '').toLowerCase();
+      const side = sideRaw === 'left' || sideRaw === 'right' ? sideRaw : (index % 2 === 0 ? 'left' : 'right');
+      const group = Number(answer?.match_group || 0);
+
+      if (side === 'left') {
+        left.push({ id, content });
+        if (group > 0) {
+          leftByGroup[group] = id;
+        }
+      } else {
+        right.push({ id, content });
+        if (group > 0) {
+          rightByGroup[group] = id;
+        }
+      }
+    });
+
+    const correctPairs = {};
+    Object.keys(leftByGroup).forEach((groupKey) => {
+      const leftId = leftByGroup[groupKey];
+      const rightId = rightByGroup[groupKey];
+      if (leftId && rightId) {
+        correctPairs[leftId] = rightId;
+      }
+    });
+
+    return { left, right, correctPairs };
+  }, [currentQuestion, isMatchingQuestion, normalizePairs]);
+
+  const selectedPairs = useMemo(() => {
+    if (!isMatchingQuestion) {
+      return {};
+    }
+
+    if (mode === 'review') {
+      return normalizePairs(currentQuestion?.matching?.user_pairs || {});
+    }
+
+    return normalizePairs(currentAnswer?.pairs || {});
+  }, [currentAnswer?.pairs, currentQuestion?.matching?.user_pairs, isMatchingQuestion, mode, normalizePairs]);
+
+  const usedRightToLeftMap = useMemo(() => {
+    const map = {};
+    Object.entries(selectedPairs).forEach(([leftId, rightId]) => {
+      if (rightId) {
+        map[String(rightId)] = String(leftId);
+      }
+    });
+    return map;
+  }, [selectedPairs]);
+
+  const matchingProgress = useMemo(() => {
+    const total = matchingModel.left.length;
+    const current = matchingModel.left.reduce((sum, leftItem) => {
+      return selectedPairs[String(leftItem.id)] ? sum + 1 : sum;
+    }, 0);
+    return { current, total };
+  }, [matchingModel.left, selectedPairs]);
+
+  const matchingLeftIndexById = useMemo(() => {
+    const map = {};
+    matchingModel.left.forEach((leftItem, index) => {
+      map[String(leftItem.id)] = index + 1;
+    });
+    return map;
+  }, [matchingModel.left]);
+
+  const activeMatchingLeft = useMemo(() => {
+    if (!activeMatchingLeftId) {
+      return null;
+    }
+    return matchingModel.left.find((item) => String(item.id) === String(activeMatchingLeftId)) || null;
+  }, [activeMatchingLeftId, matchingModel.left]);
+
+  const matchingPairPreview = useMemo(() => {
+    return matchingModel.left.map((leftItem) => {
+      const leftId = String(leftItem.id);
+      const rightId = selectedPairs[leftId] || null;
+      const rightItem = rightId ? matchingModel.right.find((item) => String(item.id) === String(rightId)) : null;
+      return {
+        leftId,
+        leftLabel: matchingLeftIndexById[leftId],
+        leftContent: leftItem.content,
+        rightId,
+        rightContent: rightItem?.content || null,
+      };
+    });
+  }, [matchingLeftIndexById, matchingModel.left, matchingModel.right, selectedPairs]);
+
+  const questionTypeLabel = useMemo(() => {
+    if (isMatchingQuestion) {
+      return t('test.questionTypeMatching');
+    }
+    if (isTextQuestion) {
+      return t('test.questionTypeText');
+    }
+    return t('test.questionTypeChoice');
+  }, [isMatchingQuestion, isTextQuestion, t]);
+
+  useEffect(() => {
+    if (!isMatchingQuestion) {
+      setActiveMatchingLeftId(null);
+      setShowMatchingOverview(false);
+      setMatchingCanvasLayout(null);
+      setMatchingLeftColumnLayout(null);
+      setMatchingRightColumnLayout(null);
+      setMatchingLeftLayouts({});
+      setMatchingRightLayouts({});
+      return;
+    }
+
+    const firstUnpaired = matchingModel.left.find((leftItem) => !selectedPairs[String(leftItem.id)]);
+    setActiveMatchingLeftId(firstUnpaired ? String(firstUnpaired.id) : (matchingModel.left[0] ? String(matchingModel.left[0].id) : null));
+  }, [currentQuestion?.id, isMatchingQuestion, matchingModel.left, selectedPairs]);
+
+  const canGoNext = useMemo(() => {
+    if (!currentQuestion) {
+      return false;
+    }
+    if (isTextQuestion) {
+      return selectedText.trim().length > 0;
+    }
+    if (isMatchingQuestion) {
+      const leftItems = matchingModel.left;
+      if (!leftItems.length) {
+        return false;
+      }
+
+      const chosenRights = new Set();
+      for (const leftItem of leftItems) {
+        const rightId = selectedPairs[String(leftItem.id)];
+        if (!rightId || chosenRights.has(String(rightId))) {
+          return false;
+        }
+        chosenRights.add(String(rightId));
+      }
+      return true;
+    }
+    return Boolean(selectedAnswerId);
+  }, [currentQuestion, isMatchingQuestion, isTextQuestion, matchingModel.left, selectedAnswerId, selectedPairs, selectedText]);
+
+  const triggerHaptic = useCallback(async (kind) => {
+    try {
+      if (kind === 'success') {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return;
+      }
+      if (kind === 'error') {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        return;
+      }
+      await Haptics.selectionAsync();
+    } catch {
+      // Ignore unavailable haptics on unsupported devices.
+    }
+  }, []);
+
+  const matchingConnections = useMemo(() => {
+    if (!isMatchingQuestion || !matchingLeftColumnLayout || !matchingRightColumnLayout) {
+      return [];
+    }
+
+    return matchingModel.left.map((leftItem) => {
+      const leftId = String(leftItem.id);
+      const rightId = selectedPairs[leftId] ? String(selectedPairs[leftId]) : null;
+      if (!rightId) {
+        return null;
+      }
+
+      const leftBox = matchingLeftLayouts[leftId];
+      const rightBox = matchingRightLayouts[rightId];
+      if (!leftBox || !rightBox) {
+        return null;
+      }
+
+      const fromX = matchingLeftColumnLayout.x + leftBox.x + leftBox.width;
+      const fromY = matchingLeftColumnLayout.y + leftBox.y + leftBox.height / 2;
+      const toX = matchingRightColumnLayout.x + rightBox.x;
+      const toY = matchingRightColumnLayout.y + rightBox.y + rightBox.height / 2;
+
+      const isActive = String(activeMatchingLeftId) === leftId;
+      const colorPalette = ['#7f84ff', '#2bc4a8', '#ff9f43', '#ff5d8f', '#5ec6ff', '#9f7aea'];
+      const leftIndex = Math.max(0, (matchingLeftIndexById[leftId] || 1) - 1);
+      const color = colorPalette[leftIndex % colorPalette.length];
+      return {
+        id: `${leftId}->${rightId}`,
+        fromX,
+        fromY,
+        toX,
+        toY,
+        isActive,
+        color,
+      };
+    }).filter(Boolean);
+  }, [
+    activeMatchingLeftId,
+    isMatchingQuestion,
+    matchingLeftColumnLayout,
+    matchingLeftLayouts,
+    matchingLeftIndexById,
+    matchingModel.left,
+    matchingRightColumnLayout,
+    matchingRightLayouts,
+    selectedPairs,
+  ]);
+
+  const visibleMatchingConnections = useMemo(() => {
+    if (showMatchingOverview) {
+      return matchingConnections;
+    }
+    return matchingConnections.filter((connection) => connection.isActive);
+  }, [matchingConnections, showMatchingOverview]);
 
   const score = useMemo(() => {
     if (mode !== 'results') {
@@ -281,6 +547,96 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
     }));
   };
 
+  const handlePickMatchingPair = (leftId, rightId) => {
+    if (!currentQuestion) {
+      return;
+    }
+
+    const normalizedLeft = String(leftId);
+    const normalizedRight = rightId === null || rightId === undefined ? null : String(rightId);
+    setAnswersByQuestionId((prev) => {
+      const prevPairs = normalizePairs(prev?.[currentQuestion.id]?.pairs || {});
+      const nextPairs = { ...prevPairs };
+
+      Object.keys(nextPairs).forEach((existingLeftId) => {
+        if (nextPairs[existingLeftId] === normalizedRight) {
+          delete nextPairs[existingLeftId];
+        }
+      });
+
+      if (normalizedRight) {
+        nextPairs[normalizedLeft] = normalizedRight;
+      } else {
+        delete nextPairs[normalizedLeft];
+      }
+
+      return {
+        ...prev,
+        [currentQuestion.id]: { pairs: nextPairs },
+      };
+    });
+
+    triggerHaptic(rightId ? 'selection' : 'error');
+  };
+
+  const handleSelectMatchingLeft = (leftId) => {
+    setActiveMatchingLeftId(String(leftId));
+    triggerHaptic('selection');
+  };
+
+  const handlePickMatchingRight = (rightId) => {
+    const normalizedRight = String(rightId);
+    let targetLeftId = activeMatchingLeftId;
+
+    if (!targetLeftId) {
+      const firstUnpaired = matchingModel.left.find((leftItem) => !selectedPairs[String(leftItem.id)]);
+      targetLeftId = firstUnpaired ? String(firstUnpaired.id) : (matchingModel.left[0] ? String(matchingModel.left[0].id) : null);
+    }
+
+    if (!targetLeftId) {
+      return;
+    }
+
+    handlePickMatchingPair(targetLeftId, normalizedRight);
+
+    const nextUnpaired = matchingModel.left.find((leftItem) => {
+      const id = String(leftItem.id);
+      if (id === String(targetLeftId)) {
+        return false;
+      }
+      return !selectedPairs[id];
+    });
+
+    setActiveMatchingLeftId(nextUnpaired ? String(nextUnpaired.id) : String(targetLeftId));
+
+    const nextCount = matchingModel.left.reduce((sum, item) => {
+      const id = String(item.id);
+      if (id === String(targetLeftId)) {
+        return sum + 1;
+      }
+      return selectedPairs[id] ? sum + 1 : sum;
+    }, 0);
+    if (matchingModel.left.length > 0 && nextCount >= matchingModel.left.length) {
+      triggerHaptic('success');
+    }
+  };
+
+  const handleClearMatchingPair = (leftId) => {
+    handlePickMatchingPair(leftId, null);
+    setActiveMatchingLeftId(String(leftId));
+    triggerHaptic('error');
+  };
+
+  const handleToggleConnections = () => {
+    setShowConnections((prev) => !prev);
+    triggerHaptic('selection');
+  };
+
+  const handleToggleOverview = () => {
+    setShowMatchingOverview((prev) => !prev);
+    triggerHaptic('selection');
+  };
+
   const handleNext = () => {
     if (mode !== 'quiz' || !canGoNext) {
       return;
@@ -296,6 +652,8 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
             if (!v) continue;
             if (v.answer_id) {
               answersPayload[q.id] = { answer_id: v.answer_id };
+            } else if (v.pairs && typeof v.pairs === 'object') {
+              answersPayload[q.id] = { pairs: normalizePairs(v.pairs) };
             } else if (typeof v.text === 'string' && v.text.trim() !== '') {
               answersPayload[q.id] = { text: v.text.trim() };
             }
@@ -348,6 +706,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
             answers: Array.isArray(item?.answers) ? item.answers : [],
             answer: item?.answer || null,
             correct_texts: Array.isArray(item?.correct_texts) ? item.correct_texts : [],
+            matching: item?.matching || null,
           };
         });
 
@@ -438,7 +797,14 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
   if (mode === 'review') {
     const correctAnswer = currentQuestionCorrectAnswer;
     const selectedAnswer = currentQuestion ? (currentQuestion.answers || []).find((a) => String(a.id) === String(selectedAnswerId)) : null;
-    const showDiff = Boolean(currentQuestion && correctAnswer && selectedAnswer && String(correctAnswer.id) !== String(selectedAnswer.id));
+    const showDiff = Boolean(
+      currentQuestion
+      && !isTextQuestion
+      && !isMatchingQuestion
+      && correctAnswer
+      && selectedAnswer
+      && String(correctAnswer.id) !== String(selectedAnswer.id)
+    );
 
     const correctTexts = Array.isArray(currentQuestion?.correct_texts)
       ? currentQuestion.correct_texts
@@ -468,15 +834,24 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
               <Text className="text-mf-secondary font-solway mt-2">{test?.title || ''}</Text>
 
             <View className="mt-4 px-3 py-2 rounded-xl border border-mf-secondary/25 bg-mf-secondary/10">
-              <Text className="text-mf-secondary font-solway text-sm">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-mf-secondary font-solway text-sm">
                   {t('test.progress', { current: step + 1, total: Math.max(totalQuestions, 1) })}
-              </Text>
+                </Text>
+                <Text className="text-mf-text font-solway-bold text-xs">{questionTypeLabel}</Text>
+              </View>
+              <View className="mt-2 h-1.5 rounded-full bg-mf-secondary/20 overflow-hidden">
+                <View
+                  className="h-1.5 rounded-full bg-mf-primary"
+                  style={{ width: `${Math.max(4, Math.min(100, ((step + 1) / Math.max(totalQuestions, 1)) * 100))}%` }}
+                />
+              </View>
             </View>
             </View>
 
             <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5 shadow-xl">
               <Animated.View style={{ opacity: animOpacity, transform: [{ translateY: animTranslate }] }}>
-                <Text className="text-mf-text font-solway-bold text-lg">{currentQuestion?.content || ''}</Text>
+                <Text className="text-mf-text font-solway-bold text-xl">{currentQuestion?.content || ''}</Text>
 
                 <View className="mt-4">
                 {isTextQuestion ? (
@@ -492,6 +867,40 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
                         ))}
                       </>
                     ) : null}
+                  </View>
+                ) : isMatchingQuestion ? (
+                  <View className="rounded-xl border border-mf-secondary/20 bg-mf-bg/40 p-4">
+                    <Text className="text-mf-secondary font-solway text-xs uppercase tracking-widest">{t('test.matchingTitle')}</Text>
+                    {matchingModel.left.map((leftItem, idx) => {
+                      const chosenRightId = selectedPairs[String(leftItem.id)] || null;
+                      const correctRightId = matchingModel.correctPairs[String(leftItem.id)] || null;
+                      const chosenRight = matchingModel.right.find((item) => String(item.id) === String(chosenRightId));
+                      const correctRight = matchingModel.right.find((item) => String(item.id) === String(correctRightId));
+                      const rowCorrect = chosenRightId && correctRightId && String(chosenRightId) === String(correctRightId);
+
+                      return (
+                        <View key={`${leftItem.id}-${idx}`} className="mt-4 rounded-xl border border-mf-secondary/20 bg-mf-secondary/5 p-3">
+                          <View className="flex-row items-center justify-between">
+                            <Text className="text-mf-text font-solway-bold flex-1 mr-3">{leftItem.content || '...'}</Text>
+                            <View className={`px-2 py-1 rounded-lg border ${rowCorrect ? 'border-green-500/40 bg-green-500/10' : 'border-red-500/40 bg-red-500/10'}`}>
+                              <Text className={`font-solway-bold text-xs ${rowCorrect ? 'text-green-300' : 'text-red-300'}`}>
+                                {rowCorrect ? t('test.matchingCorrect') : t('test.matchingIncorrect')}
+                              </Text>
+                            </View>
+                          </View>
+                          <View className="mt-3 rounded-lg border border-mf-secondary/20 bg-mf-bg/30 p-3">
+                            <Text className="text-mf-secondary font-solway text-xs uppercase tracking-widest">{t('test.matchingYourPair')}</Text>
+                            <Text className={`font-solway mt-1 ${rowCorrect ? 'text-green-300' : 'text-red-300'}`}>
+                              {chosenRight?.content || t('test.matchingNoAnswer')}
+                            </Text>
+                          </View>
+                          <View className="mt-2 rounded-lg border border-mf-secondary/20 bg-mf-bg/30 p-3">
+                            <Text className="text-mf-secondary font-solway text-xs uppercase tracking-widest">{t('test.matchingCorrectPair')}</Text>
+                            <Text className="text-green-300 font-solway mt-1">{correctRight?.content || '...'}</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
                 ) : (
                   (currentQuestion?.answers || []).map((a) => {
@@ -513,7 +922,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
 
                   return (
                     <View key={a.id} className={`${base} ${style}`}>
-                      <Text className={`font-solway ${textStyle}`}>{getAnswerLabel(currentQuestion, a)}</Text>
+                      <Text className={`font-solway text-base ${textStyle}`}>{getAnswerLabel(currentQuestion, a)}</Text>
                     </View>
                   );
                   })
@@ -568,26 +977,34 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
         <StatusBar style="light" />
         <Header
           title={test?.title || ''}
-          rightContent={
-            <View className="px-3 py-2 rounded-xl border border-mf-secondary/25 bg-mf-secondary/10">
-              <Text className="text-mf-secondary font-solway text-xs">{t('test.progress', { current: step + 1, total: Math.max(totalQuestions, 1) })}</Text>
-            </View>
-          }
+          rightContent={null}
         />
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
           <View className="mt-6">
-            <Text className="text-mf-text text-2xl font-solway-extrabold tracking-wide">{test?.title || ''}</Text>
             {test?.description ? (
-              <Text className="text-mf-secondary font-solway mt-2">{test.description}</Text>
+              <Text className="text-mf-secondary font-solway text-sm">{test.description}</Text>
             ) : null}
 
-            {/* Progress is shown in the header */}
+            <View className="mt-3 rounded-xl border border-mf-secondary/20 bg-mf-secondary/10 p-3">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-mf-secondary font-solway text-xs uppercase tracking-widest">
+                  {t('test.progress', { current: step + 1, total: Math.max(totalQuestions, 1) })}
+                </Text>
+                <Text className="text-mf-text font-solway-bold text-xs">{questionTypeLabel}</Text>
+              </View>
+              <View className="mt-2 h-2 rounded-full bg-mf-secondary/20 overflow-hidden">
+                <View
+                  className="h-2 rounded-full bg-mf-primary"
+                  style={{ width: `${Math.max(4, Math.min(100, ((step + 1) / Math.max(totalQuestions, 1)) * 100))}%` }}
+                />
+              </View>
+            </View>
           </View>
 
           <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5 shadow-xl">
             <Animated.View style={{ opacity: animOpacity, transform: [{ translateY: animTranslate }] }}>
-              <Text className="text-mf-text font-solway-bold text-lg">{currentQuestion?.content || ''}</Text>
+              <Text className="text-mf-text font-solway-bold text-xl">{currentQuestion?.content || ''}</Text>
 
               <View className="mt-4">
               {isTextQuestion ? (
@@ -603,6 +1020,142 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
                     multiline
                   />
                 </View>
+              ) : isMatchingQuestion ? (
+                <View className="rounded-xl border border-mf-secondary/20 bg-mf-bg/40 p-4">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-mf-secondary font-solway text-sm uppercase tracking-widest">{t('test.matchingTitle')}</Text>
+                    <TouchableOpacity
+                      className="px-3 py-2 rounded-xl border border-mf-secondary/25 bg-mf-secondary/10"
+                      onPress={handleToggleConnections}
+                    >
+                      <Text className="text-mf-secondary font-solway-bold text-sm">
+                        {showConnections ? t('test.matchingConnectionsOn') : t('test.matchingConnectionsOff')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text className="text-mf-secondary font-solway text-sm mt-2">{t('test.matchingHint')}</Text>
+
+                  <View className="mt-3 rounded-xl border border-mf-primary/25 bg-mf-primary/10 px-3 py-2 flex-row items-center justify-between">
+                    <Text className="text-mf-text font-solway-bold text-sm">
+                      {t('test.matchingProgress', { current: matchingProgress.current, total: Math.max(matchingProgress.total, 1) })}
+                    </Text>
+                    <TouchableOpacity onPress={handleToggleOverview}>
+                      <Text className="text-mf-secondary font-solway-bold text-sm">
+                        {showMatchingOverview ? t('test.matchingHideOverview') : t('test.matchingShowOverview')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {activeMatchingLeft ? (
+                    <View className="mt-3 rounded-xl border border-mf-primary/35 bg-mf-primary/15 px-3 py-3">
+                      <Text className="text-mf-secondary font-solway text-sm uppercase tracking-widest">{t('test.matchingNowLinking')}</Text>
+                      <Text className="text-mf-text font-solway-bold text-base mt-1">
+                        #{matchingLeftIndexById[String(activeMatchingLeft.id)] || '?'} {activeMatchingLeft.content || '...'}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  <View
+                    className="mt-4 rounded-xl border border-mf-secondary/20 bg-mf-secondary/5 p-3"
+                    onLayout={(event) => setMatchingCanvasLayout(event.nativeEvent.layout)}
+                  >
+                    <View className="flex-row" style={{ gap: 12 }}>
+                      <View
+                        className="w-16"
+                        onLayout={(event) => setMatchingLeftColumnLayout(event.nativeEvent.layout)}
+                      >
+                        {matchingModel.left.map((leftItem, idx) => {
+                          const leftId = String(leftItem.id);
+                          const isActiveLeft = String(activeMatchingLeftId) === leftId;
+                          const hasPair = Boolean(selectedPairs[leftId]);
+                          return (
+                            <TouchableOpacity
+                              key={`${leftId}-${idx}`}
+                              className={`mt-3 rounded-xl border items-center py-3 ${isActiveLeft ? 'border-mf-primary bg-mf-primary/15' : 'border-mf-secondary/20 bg-mf-bg/30'}`}
+                              onPress={() => handleSelectMatchingLeft(leftId)}
+                              onLayout={(event) => {
+                                const nextLayout = event.nativeEvent.layout;
+                                setMatchingLeftLayouts((prev) => ({ ...prev, [leftId]: nextLayout }));
+                              }}
+                              disabled={isTransitioning}
+                            >
+                              <Text className="text-mf-text font-solway-bold text-sm">#{matchingLeftIndexById[leftId] || idx + 1}</Text>
+                              <View className={`mt-1 w-2 h-2 rounded-full ${hasPair ? 'bg-green-300' : 'bg-mf-secondary/40'}`} />
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+
+                      <View
+                        className="flex-1"
+                        onLayout={(event) => setMatchingRightColumnLayout(event.nativeEvent.layout)}
+                      >
+                        {matchingModel.right.map((rightItem) => {
+                          const rightId = String(rightItem.id);
+                          const usedByLeft = usedRightToLeftMap[rightId] || null;
+                          const isSelectedForActive = usedByLeft && String(usedByLeft) === String(activeMatchingLeftId);
+                          const isLocked = usedByLeft && !isSelectedForActive;
+
+                          return (
+                            <TouchableOpacity
+                              key={`right-${rightId}`}
+                              className={`mt-3 rounded-xl border px-3 py-4 ${isSelectedForActive ? 'bg-mf-primary/25 border-mf-primary' : isLocked ? 'bg-mf-secondary/10 border-mf-secondary/10' : 'bg-mf-bg/40 border-mf-secondary/25'}`}
+                              onPress={() => handlePickMatchingRight(rightId)}
+                              onLayout={(event) => {
+                                const nextLayout = event.nativeEvent.layout;
+                                setMatchingRightLayouts((prev) => ({ ...prev, [rightId]: nextLayout }));
+                              }}
+                              disabled={isTransitioning || isLocked}
+                            >
+                              <View className="flex-row items-center justify-between">
+                                <Text className={`font-solway text-base flex-1 pr-2 ${isLocked ? 'text-mf-secondary' : 'text-mf-text'}`}>
+                                  {rightItem.content || t('test.matchingChoose')}
+                                </Text>
+                                {usedByLeft ? (
+                                  <View className={`px-2 py-1 rounded-full ${isSelectedForActive ? 'bg-mf-primary/40' : 'bg-mf-secondary/20'}`}>
+                                    <Text className="text-mf-text font-solway-bold text-sm">#{matchingLeftIndexById[String(usedByLeft)] || '?'}</Text>
+                                  </View>
+                                ) : null}
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+
+                    {showConnections && matchingCanvasLayout ? (
+                      <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+                        <Svg width={matchingCanvasLayout.width} height={matchingCanvasLayout.height}>
+                          {visibleMatchingConnections.map((connection) => {
+                            const curve = Math.max(24, Math.abs(connection.toX - connection.fromX) * 0.35);
+                            const d = `M ${connection.fromX} ${connection.fromY} C ${connection.fromX + curve} ${connection.fromY}, ${connection.toX - curve} ${connection.toY}, ${connection.toX} ${connection.toY}`;
+                            return (
+                              <Path
+                                key={connection.id}
+                                d={d}
+                                stroke={connection.color}
+                                strokeWidth={connection.isActive ? 2.4 : 1.2}
+                                strokeOpacity={connection.isActive ? 0.72 : 0.2}
+                                fill="none"
+                              />
+                            );
+                          })}
+                        </Svg>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  {showMatchingOverview && matchingPairPreview.length ? (
+                    <View className="mt-3 rounded-xl border border-mf-secondary/20 bg-mf-secondary/5 p-3">
+                      <Text className="text-mf-secondary font-solway text-sm uppercase tracking-widest">{t('test.matchingOverview')}</Text>
+                      {matchingPairPreview.map((row) => (
+                        <Text key={`pair-${row.leftId}`} className="text-mf-text font-solway text-sm mt-2">
+                          #{row.leftLabel || '?'} {row.leftContent || '...'} -> {row.rightContent || t('test.matchingChoose')}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
               ) : (
                 (currentQuestion?.answers || []).map((a) => {
                   const isSelected = String(selectedAnswerId) === String(a.id);
@@ -613,7 +1166,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
                       onPress={() => handlePickAnswer(a.id)}
                       disabled={isTransitioning}
                     >
-                      <Text className={`font-solway ${isSelected ? 'text-mf-text font-solway-bold' : 'text-mf-text'}`}>{getAnswerLabel(currentQuestion, a)}</Text>
+                      <Text className={`font-solway text-base ${isSelected ? 'text-mf-text font-solway-bold' : 'text-mf-text'}`}>{getAnswerLabel(currentQuestion, a)}</Text>
                     </TouchableOpacity>
                   );
                 })
@@ -645,6 +1198,14 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
               <Text className="text-mf-text font-solway-bold">{step >= questions.length - 1 ? t('test.finish') : t('test.next')}</Text>
             </TouchableOpacity>
           </View>
+
+          {!canGoNext ? (
+            <View className="mt-3 rounded-xl border border-mf-secondary/20 bg-mf-secondary/5 px-3 py-2">
+              <Text className="text-mf-secondary font-solway text-sm">
+                {isMatchingQuestion ? t('test.matchingNeedAllPairs') : t('test.answerRequiredHint')}
+              </Text>
+            </View>
+          ) : null}
 
         </ScrollView>
       </SafeAreaView>

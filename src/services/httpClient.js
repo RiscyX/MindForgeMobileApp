@@ -1,4 +1,53 @@
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.214/MindForge/api/v1';
+const DEFAULT_API_BASE_URL = 'https://undefined.stud.vts.su.ac.rs/api/v1';
+const EXPECTED_API_ORIGIN = 'https://undefined.stud.vts.su.ac.rs';
+
+const trimTrailingSlash = (value) => String(value || '').replace(/\/+$/, '');
+
+const normalizeApiBaseUrl = (value) => {
+  const base = trimTrailingSlash(value);
+  if (!base) {
+    return DEFAULT_API_BASE_URL;
+  }
+
+  let normalized = base;
+
+  if (base.endsWith('/api')) {
+    normalized = `${base}/v1`;
+  }
+
+  if (!normalized.endsWith('/api/v1')) {
+    return DEFAULT_API_BASE_URL;
+  }
+
+  try {
+    const origin = new URL(normalized).origin;
+    if (origin !== EXPECTED_API_ORIGIN) {
+      if (__DEV__) {
+        console.warn('[httpClient] Ignoring unsupported API origin:', origin);
+      }
+      return DEFAULT_API_BASE_URL;
+    }
+  } catch {
+    return DEFAULT_API_BASE_URL;
+  }
+
+  return normalized;
+};
+
+const resolveApiBaseUrl = () => {
+  const envBase = process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (typeof envBase === 'string' && envBase.trim()) {
+    return normalizeApiBaseUrl(envBase.trim());
+  }
+
+  return normalizeApiBaseUrl(DEFAULT_API_BASE_URL);
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
+
+if (__DEV__) {
+  console.log('[httpClient] API_BASE_URL:', API_BASE_URL);
+}
 
 class ApiError extends Error {
   constructor(message, status, data) {
@@ -55,7 +104,9 @@ export const apiRequest = async (endpoint, options = {}) => {
     timeoutMs = 15000,
   } = options;
 
-  const normalizedAccessToken = typeof accessToken === 'string' ? accessToken.trim() : accessToken;
+  const normalizedAccessToken = typeof accessToken === 'string'
+    ? accessToken.trim().replace(/^bearer\s+/i, '')
+    : accessToken;
   const sentAuth = Boolean(normalizedAccessToken);
 
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;

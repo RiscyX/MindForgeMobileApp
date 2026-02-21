@@ -11,7 +11,7 @@ export default function AuthBottomNav({ active = 'login', onLoginPress, onRegist
           className={`flex-1 rounded-xl py-3 items-center ${active === 'login' ? 'bg-mf-primary' : 'bg-transparent'}`}
           onPress={onLoginPress}
         >
-          <Text className={`font-solway-bold text-sm uppercase tracking-widest ${active === 'login' ? 'text-mf-text' : 'text-mf-secondary'}`}>
+          <Text className={`font-solway-bold text-sm ${active === 'login' ? 'text-mf-text' : 'text-mf-secondary'}`}>
             {t('common.login')}
           </Text>
         </TouchableOpacity>
@@ -20,7 +20,7 @@ export default function AuthBottomNav({ active = 'login', onLoginPress, onRegist
           className={`flex-1 rounded-xl py-3 items-center ${active === 'register' ? 'bg-mf-primary' : 'bg-transparent'}`}
           onPress={onRegisterPress}
         >
-          <Text className={`font-solway-bold text-sm uppercase tracking-widest ${active === 'register' ? 'text-mf-text' : 'text-mf-secondary'}`}>
+          <Text className={`font-solway-bold text-sm ${active === 'register' ? 'text-mf-text' : 'text-mf-secondary'}`}>
             {t('common.register')}
           </Text>
         </TouchableOpacity>

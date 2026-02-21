@@ -108,9 +108,11 @@ function AppContent() {
             'This usually means the route is wired to the WEB controller stack (session auth) instead of the API stack (bearer auth), ' +
             'or the API error handler is rendering HTML in debug. Please fix backend routing/Api controller for this endpoint.'
           );
+          setCurrentScreen('Login');
           return;
         }
 
+        setCurrentScreen('Login');
         alert(apiCode ? `${message} (${apiCode}) ${diag}` : `${message} ${diag}`);
         return;
       }
@@ -122,7 +124,7 @@ function AppContent() {
   };
 
   const handleLogin = async ({ email, password }) => {
-    await login({ email, password, deviceName: 'MindForge Mobile App' });
+    await login({ email, password });
     setCurrentScreen('Home');
   };
 
@@ -201,8 +203,14 @@ function AppContent() {
     );
   }
 
-  const activeScreen = !isAuthenticated && (currentScreen === 'Stats' || currentScreen === 'Profile' || currentScreen === 'Test')
-    ? 'Home'
+  const activeScreen = !isAuthenticated && (
+    currentScreen === 'Stats'
+    || currentScreen === 'Profile'
+    || currentScreen === 'Test'
+    || currentScreen === 'TestDetails'
+    || currentScreen === 'CreateTest'
+  )
+    ? 'Login'
     : currentScreen;
 
   let content;

@@ -5,7 +5,7 @@ export default function AppBottomNav({ active = 'tests', onTestsPress, onStatsPr
   const { t } = useLanguage();
 
   const itemClass = (tab) => `flex-1 rounded-xl py-3 items-center ${active === tab ? 'bg-mf-primary' : 'bg-transparent'}`;
-  const textClass = (tab) => `font-solway-bold text-xs uppercase tracking-widest ${active === tab ? 'text-mf-text' : 'text-mf-secondary'}`;
+  const textClass = (tab) => `font-solway-bold text-sm ${active === tab ? 'text-mf-text' : 'text-mf-secondary'}`;
 
   return (
     <View className="w-full px-6 pb-6">
