@@ -18,6 +18,9 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
   const [answersByQuestionId, setAnswersByQuestionId] = useState({});
   const [mode, setMode] = useState('quiz');
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const isSubmittingRef = useRef(false);
   const [activeMatchingLeftId, setActiveMatchingLeftId] = useState(null);
   const [showConnections, setShowConnections] = useState(true);
   const [showMatchingOverview, setShowMatchingOverview] = useState(false);
@@ -643,7 +646,14 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
     }
 
     if (step >= questions.length - 1) {
-      // Submit attempt
+      // Prevent double submit
+      if (isSubmittingRef.current) {
+        return;
+      }
+      isSubmittingRef.current = true;
+      setIsSubmitting(true);
+      setSubmitError('');
+
       (async () => {
         try {
           const answersPayload = {};
@@ -660,9 +670,13 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
           }
           const submit = await submitAttemptRequest({ authFetch, attemptId, answers: answersPayload });
           setAttemptSummary(submit?.attempt || attemptSummary);
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
           transitionMode('results');
         } catch (e) {
-          setError(e?.message || 'Submit failed.');
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+          setSubmitError(e?.message || t('test.submitError'));
         }
       })();
       return;
@@ -1191,15 +1205,34 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
             </TouchableOpacity>
 
             <TouchableOpacity
-              className={`flex-1 py-4 rounded-xl items-center ${canGoNext && !isTransitioning ? 'bg-mf-primary' : 'bg-mf-secondary/15'}`}
+              className={`flex-1 py-4 rounded-xl items-center ${canGoNext && !isTransitioning && !isSubmitting ? 'bg-mf-primary' : 'bg-mf-secondary/15'}`}
               onPress={handleNext}
-              disabled={!canGoNext || isTransitioning}
+              disabled={!canGoNext || isTransitioning || isSubmitting}
             >
-              <Text className="text-mf-text font-solway-bold">{step >= questions.length - 1 ? t('test.finish') : t('test.next')}</Text>
+              {isSubmitting ? (
+                <View className="flex-row items-center">
+                  <ActivityIndicator size="small" color="#eae9fc" />
+                  <Text className="text-mf-text font-solway-bold ml-2">{t('test.submitting')}</Text>
+                </View>
+              ) : (
+                <Text className="text-mf-text font-solway-bold">{step >= questions.length - 1 ? t('test.finish') : t('test.next')}</Text>
+              )}
             </TouchableOpacity>
           </View>
 
-          {!canGoNext ? (
+          {submitError ? (
+            <View className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+              <Text className="text-red-300 font-solway text-sm">{submitError}</Text>
+              <TouchableOpacity
+                className="mt-2 self-start px-3 py-2 rounded-lg border border-red-400/40 bg-red-500/10"
+                onPress={handleNext}
+              >
+                <Text className="text-red-200 font-solway-bold text-xs uppercase tracking-widest">{t('test.submitRetry')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {!canGoNext && !submitError ? (
             <View className="mt-3 rounded-xl border border-mf-secondary/20 bg-mf-secondary/5 px-3 py-2">
               <Text className="text-mf-secondary font-solway text-sm">
                 {isMatchingQuestion ? t('test.matchingNeedAllPairs') : t('test.answerRequiredHint')}
