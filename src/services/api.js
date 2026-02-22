@@ -84,7 +84,7 @@ export const fetchTestDetails = async ({ testId, language = 'en' }) => {
 export const fetchDailyQuote = async () => {
   try {
     // A Math.random() segít elkerülni a cache-elést
-    const response = await fetch(`http://api.forismatic.com/api/1.0/?method=getQuote&format=json&lang=en&key=${Math.floor(Math.random() * 100000)}`);
+    const response = await fetch(`https://api.forismatic.com/api/1.0/?method=getQuote&format=json&lang=en&key=${Math.floor(Math.random() * 100000)}`);
     
     if (!response.ok) {
        // Ha nem sikerül, visszatérünk null-lal és a fallback szöveg marad

@@ -11,6 +11,7 @@ export const translations = {
       cancel: 'Cancel',
       login: 'Log In',
       register: 'Sign Up',
+      uncategorized: 'Uncategorized',
     },
     home: {
       subtitle: 'Unlock Your Potential',
@@ -191,6 +192,7 @@ export const translations = {
       email: 'Email',
       password: 'Password',
       forgotPassword: 'Forgot Password?',
+      forgotPasswordHint: 'Please use the web application to reset your password.',
       logIn: 'Log In',
       noAccount: "Don't have an account?",
       signUp: 'Sign Up',
@@ -222,6 +224,7 @@ export const translations = {
       cancel: 'Mégse',
       login: 'Bejelentkezés',
       register: 'Regisztráció',
+      uncategorized: 'Kategorizálatlan',
     },
     home: {
       subtitle: 'Hozd ki magadból a legtöbbet',
@@ -402,6 +405,7 @@ export const translations = {
       email: 'Email cím',
       password: 'Jelszó',
       forgotPassword: 'Elfelejtett jelszó?',
+      forgotPasswordHint: 'A jelszó visszaállításához kérjük, használd a webes alkalmazást.',
       logIn: 'Bejelentkezés',
       noAccount: 'Nincs még fiókod?',
       signUp: 'Regisztráció',
