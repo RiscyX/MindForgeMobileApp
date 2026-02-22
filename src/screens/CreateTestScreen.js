@@ -1,8 +1,9 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path } from 'react-native-svg';
 import { useLanguage } from '../hooks/useLanguage';
@@ -337,6 +338,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       setIsPickerOpen(false);
+      Alert.alert(t('createTest.mediaPermissionDenied'));
       return;
     }
 
@@ -345,7 +347,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
       allowsMultipleSelection: true,
       selectionLimit: 12,
       allowsEditing: false,
-      quality: 0.9,
+      quality: 1,
     });
 
     if (!result.canceled && result.assets?.length) {
@@ -354,7 +356,9 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
         // eslint-disable-next-line no-await-in-loop
         const normalized = await normalizePickedAssetToFile(asset);
         if (normalized?.uri) {
-          normalizedAssets.push(normalized);
+          // eslint-disable-next-line no-await-in-loop
+          const compressed = await compressAndResize(normalized.uri);
+          normalizedAssets.push({ ...normalized, uri: compressed.uri, mimeType: 'image/jpeg' });
         }
       }
 
@@ -370,29 +374,32 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
     }
 
     setIsPickerOpen(false);
-  }, [normalizePickedAssetToFile, t]);
+  }, [compressAndResize, normalizePickedAssetToFile, t]);
 
   const takePhoto = useCallback(async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
       setIsPickerOpen(false);
+      Alert.alert(t('createTest.cameraPermissionDenied'));
       return;
     }
 
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: false,
-      quality: 0.9,
+      quality: 1,
     });
 
     if (!result.canceled && result.assets?.[0]) {
       const normalized = await normalizePickedAssetToFile(result.assets[0]);
       if (normalized?.uri) {
-        setImageAssets((prev) => (prev.some((x) => x?.uri === normalized.uri) ? prev : [...prev, normalized]));
+        const compressed = await compressAndResize(normalized.uri);
+        const final = { ...normalized, uri: compressed.uri, mimeType: 'image/jpeg' };
+        setImageAssets((prev) => (prev.some((x) => x?.uri === final.uri) ? prev : [...prev, final]));
       }
     }
 
     setIsPickerOpen(false);
-  }, [normalizePickedAssetToFile, t]);
+  }, [compressAndResize, normalizePickedAssetToFile, t]);
 
   const handleAddImagePress = useCallback(() => {
     setIsPickerOpen(true);
@@ -407,6 +414,21 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
 
   const handleRemoveAllImages = useCallback(() => {
     setImageAssets([]);
+  }, []);
+
+  // Compress and resize an image URI to max 1280px wide, JPEG 75% quality.
+  // Falls back to the original URI on any error so the flow is never blocked.
+  const compressAndResize = useCallback(async (uri) => {
+    try {
+      const result = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 1280 } }],
+        { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      return result;
+    } catch {
+      return { uri };
+    }
   }, []);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
