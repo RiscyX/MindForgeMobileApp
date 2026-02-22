@@ -19,6 +19,12 @@ export default function LoginScreen({ onLogin, onBack, onGoRegister, onGoLogin }
       return;
     }
 
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
+    if (!emailValid) {
+      setError(t('login.invalidEmail'));
+      return;
+    }
+
     setIsSubmitting(true);
     setError('');
 

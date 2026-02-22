@@ -195,6 +195,7 @@ export const translations = {
       noAccount: "Don't have an account?",
       signUp: 'Sign Up',
       missingCredentials: 'Please enter both email and password.',
+      invalidEmail: 'Please enter a valid email address.',
       loginFailed: 'Login failed. Please try again.',
     },
     register: {
@@ -405,6 +406,7 @@ export const translations = {
       noAccount: 'Nincs még fiókod?',
       signUp: 'Regisztráció',
       missingCredentials: 'Add meg az email címet és a jelszót is.',
+      invalidEmail: 'Kérlek adj meg érvényes email címet.',
       loginFailed: 'A bejelentkezés sikertelen. Próbáld újra.',
     },
     register: {
