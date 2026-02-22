@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLanguage } from '../hooks/useLanguage';
 import { useAuth } from '../hooks/useAuth';
@@ -8,16 +8,16 @@ import AppBottomNav from '../components/AppBottomNav';
 import { fetchQuizStatsRequest } from '../services/statsApi';
 
 export default function StatsScreen({ onGoTests, onGoStats, onGoProfile }) {
-  const { t } = useLanguage();
-  const { language } = useLanguage();
+  const { t, language } = useLanguage();
   const { authFetch } = useAuth();
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [quizzes, setQuizzes] = useState([]);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setIsLoading(true);
     setError('');
     try {
       const data = await fetchQuizStatsRequest({ authFetch, language });
@@ -32,8 +32,14 @@ export default function StatsScreen({ onGoTests, onGoStats, onGoProfile }) {
       setError(e?.message || t('profile.loadError'));
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, [authFetch, language, t]);
+
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    load({ silent: true });
+  }, [load]);
 
   useEffect(() => {
     load();
@@ -255,6 +261,14 @@ export default function StatsScreen({ onGoTests, onGoStats, onGoProfile }) {
             renderItem={renderItem}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 140 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={handleRefresh}
+                tintColor="#575ddb"
+                colors={['#575ddb']}
+              />
+            }
           />
         )}
       </SafeAreaView>

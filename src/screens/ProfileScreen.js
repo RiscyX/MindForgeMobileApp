@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useLanguage } from '../hooks/useLanguage';
 import { useAuth } from '../hooks/useAuth';
@@ -190,7 +191,14 @@ export default function ProfileScreen({ user, onLogout, onGoTests, onGoStats, on
     if (!result.canceled && result.assets?.[0]) {
       try {
         const normalized = await normalizePickedAssetToFile(result.assets[0]);
-        setPickedAvatarAsset(normalized);
+        if (normalized?.uri) {
+          const compressed = await ImageManipulator.manipulateAsync(
+            normalized.uri,
+            [{ resize: { width: 512 } }],
+            { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG },
+          ).catch(() => ({ uri: normalized.uri }));
+          setPickedAvatarAsset({ ...normalized, uri: compressed.uri, mimeType: 'image/jpeg' });
+        }
       } catch {
         setError(t('profile.avatarPrepareFailed'));
       }

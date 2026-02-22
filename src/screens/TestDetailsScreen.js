@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchTestDetails } from '../services/api';
@@ -11,22 +11,22 @@ export default function TestDetailsScreen({ testId, onBack, onStart }) {
   const [error, setError] = useState('');
   const [test, setTest] = useState(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
-      setError('');
-      try {
-        const details = await fetchTestDetails({ testId, language });
-        setTest(details);
-      } catch (e) {
-        setError(e?.message || 'Failed to load test details.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    load();
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const details = await fetchTestDetails({ testId, language });
+      setTest(details);
+    } catch (e) {
+      setError(e?.message || 'Failed to load test details.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [language, testId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const questions = useMemo(() => Array.isArray(test?.questions) ? test.questions : [], [test]);
 
@@ -70,6 +70,12 @@ export default function TestDetailsScreen({ testId, onBack, onStart }) {
         {error ? (
           <View className="mt-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-5">
             <Text className="text-red-300 font-solway-bold text-base">{error}</Text>
+            <TouchableOpacity
+              className="mt-3 bg-mf-primary py-3 rounded-xl items-center"
+              onPress={load}
+            >
+              <Text className="text-mf-text font-solway-bold text-sm uppercase tracking-widest">{t('stats.refresh')}</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 

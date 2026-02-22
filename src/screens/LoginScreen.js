@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
+import { Alert, View, Text, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useLanguage } from '../hooks/useLanguage';
@@ -81,7 +81,7 @@ export default function LoginScreen({ onLogin, onBack, onGoRegister, onGoLogin }
               onChangeText={setPassword}
               editable={!isSubmitting}
             />
-            <TouchableOpacity className="self-end mt-2">
+            <TouchableOpacity className="self-end mt-2" onPress={() => Alert.alert(t('login.forgotPassword'), t('login.forgotPasswordHint'))}>
               <Text className="text-mf-primary text-xs font-solway-bold">{t('login.forgotPassword')}</Text>
             </TouchableOpacity>
           </View>

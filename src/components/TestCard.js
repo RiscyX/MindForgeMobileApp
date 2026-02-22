@@ -35,7 +35,7 @@ export default function TestCard({ test, difficultyKey, isStarting = false, onSt
 
   const title = test?.title || '';
   const description = test?.description || '';
-  const category = test?.category || 'Uncategorized';
+  const category = test?.category || t('common.uncategorized');
   const difficultyLabel = (test?.difficulty && String(test.difficulty).trim() !== '')
     ? String(test.difficulty)
     : t(`difficulty.${difficultyKey}`);

@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useMemo, useState } from 'react';
-import { Text, View, TouchableOpacity, ActivityIndicator, FlatList, ScrollView, TextInput, Keyboard, Pressable, StyleSheet } from 'react-native';
+import { Text, View, TouchableOpacity, ActivityIndicator, FlatList, RefreshControl, ScrollView, TextInput, Keyboard, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { cssInterop } from 'nativewind';
 import { useHomeData } from '../hooks/useHomeData';
@@ -13,7 +13,7 @@ cssInterop(SafeAreaView, { className: 'style' });
 
 export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTestId, user, onGoCreateTest, isLoggedIn, onGoLogin, onGoRegister, onGoTests, onGoStats, onGoProfile }) {
   const { language, t } = useLanguage();
-  const { data, tests, loading, error } = useHomeData({ language });
+  const { data, tests, loading, refreshing, error, refetch } = useHomeData({ language });
   const canCreateTests = Boolean(isLoggedIn && (user?.role_id === 1 || user?.role_id === 2));
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [categoryInput, setCategoryInput] = useState('');
@@ -146,6 +146,14 @@ export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTes
             keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="handled"
             onScrollBeginDrag={closeCategoryDropdown}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={refetch}
+                tintColor="#575ddb"
+                colors={['#575ddb']}
+              />
+            }
           ListHeaderComponent={
             <>
               <View className="mt-8 mb-8 w-full bg-mf-secondary/10 rounded-2xl p-5 border border-mf-secondary/20 shadow-xl">

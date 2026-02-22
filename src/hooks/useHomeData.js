@@ -1,37 +1,44 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { EN_FALLBACK_QUOTE, fetchHomeData, fetchTests, fetchDailyQuote } from '../services/api';
 
 export const useHomeData = ({ language = 'en' } = {}) => {
   const [data, setData] = useState(null);
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        // Párhuzamosan lekérjük a header adatokat, a teszteket és az idézetet
-        const [homeResult, testsResult, quoteResult] = await Promise.all([
-          fetchHomeData(language),
-          fetchTests({ language }),
-          fetchDailyQuote(),
-        ]);
+  const loadData = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
+    setError(null);
+    try {
+      const [homeResult, testsResult, quoteResult] = await Promise.all([
+        fetchHomeData(language),
+        fetchTests({ language }),
+        fetchDailyQuote(),
+      ]);
 
-        setData({
-          ...homeResult,
-          dailyQuote: quoteResult || EN_FALLBACK_QUOTE,
-        });
-        setTests(testsResult);
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadData();
+      setData({
+        ...homeResult,
+        dailyQuote: quoteResult || EN_FALLBACK_QUOTE,
+      });
+      setTests(testsResult);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [language]);
 
-  return { data, tests, loading, error };
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const refetch = useCallback(() => {
+    setRefreshing(true);
+    loadData({ silent: true });
+  }, [loadData]);
+
+  return { data, tests, loading, refreshing, error, refetch };
 };
