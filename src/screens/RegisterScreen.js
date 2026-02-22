@@ -45,7 +45,7 @@ export default function RegisterScreen({ onBack, onGoLogin, onGoRegister, onRegi
       setConfirmPassword('');
       setTimeout(() => {
         onGoLogin();
-      }, 700);
+      }, 3000);
     } catch (registerError) {
       if (registerError?.status === 404) {
         setError(t('register.unavailable'));
