@@ -783,6 +783,18 @@ function QuestionEditor({
         multiline
       />
 
+      {/* Explanation */}
+      <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mb-1">
+        {t('editTest.explanationLabel')}
+      </Text>
+      <TextInput
+        className="w-full rounded-xl border border-mf-secondary/25 bg-mf-bg/60 px-3 py-2 text-mf-text font-solway mb-3"
+        value={question.question_translations?.[activeLangKey]?.explanation || ''}
+        onChangeText={(v) => onChangeQuestionText('explanation', v)}
+        placeholderTextColor="#8a89a2"
+        multiline
+      />
+
       {/* Answers */}
       {qType === TYPE_MATCHING ? (
         <MatchingEditor
