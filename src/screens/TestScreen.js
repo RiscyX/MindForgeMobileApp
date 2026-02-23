@@ -47,6 +47,20 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
 
   const animOpacity = useRef(new Animated.Value(1)).current;
   const animTranslate = useRef(new Animated.Value(0)).current;
+  const practiceBarAnim = useRef(new Animated.Value(0)).current;
+
+  // Looping shimmer animation for practice mode progress bar
+  useEffect(() => {
+    if (!isPractice) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(practiceBarAnim, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(practiceBarAnim, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isPractice, practiceBarAnim]);
 
   const IconX = ({ size = 18, color = '#eae9fc' }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -1081,15 +1095,29 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
             <View className="mt-3 rounded-xl border border-mf-secondary/20 bg-mf-secondary/10 p-3">
               <View className="flex-row items-center justify-between">
                 <Text className="text-mf-secondary font-solway text-xs uppercase tracking-widest">
-                  {t('test.progress', { current: step + 1, total: Math.max(totalQuestions, 1) })}
+                  {isPractice
+                    ? t('practice.questionNumber', { number: (practiceScore?.total || 0) + step + 1 })
+                    : t('test.progress', { current: step + 1, total: Math.max(totalQuestions, 1) })}
                 </Text>
                 <Text className="text-mf-text font-solway-bold text-xs">{questionTypeLabel}</Text>
               </View>
               <View className="mt-2 h-2 rounded-full bg-mf-secondary/20 overflow-hidden">
-                <View
-                  className="h-2 rounded-full bg-mf-primary"
-                  style={{ width: `${Math.max(4, Math.min(100, ((step + 1) / Math.max(totalQuestions, 1)) * 100))}%` }}
-                />
+                {isPractice ? (
+                  <Animated.View
+                    className="h-2 rounded-full bg-mf-primary"
+                    style={{
+                      width: practiceBarAnim.interpolate({
+                        inputRange: [0, 0.5, 1],
+                        outputRange: ['15%', '85%', '15%'],
+                      }),
+                    }}
+                  />
+                ) : (
+                  <View
+                    className="h-2 rounded-full bg-mf-primary"
+                    style={{ width: `${Math.max(4, Math.min(100, ((step + 1) / Math.max(totalQuestions, 1)) * 100))}%` }}
+                  />
+                )}
               </View>
             </View>
 
