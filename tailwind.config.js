@@ -11,6 +11,8 @@ module.exports = {
         'mf-primary': '#575ddb',
         'mf-secondary': '#5b5b6b',
         'mf-accent': '#ffffff',
+        // Web-equivalent card surface: rgba(234,233,252,0.05) ≈ web's rgba(text,0.03)
+        'mf-surface': 'rgba(234,233,252,0.05)',
       },
       fontFamily: {
         solway: ['Solway_400Regular'],

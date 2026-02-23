@@ -1,23 +1,23 @@
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Easing, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Easing, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from '../hooks/useAuth';
 import { getAttemptRequest, reviewAttemptRequest, submitAttemptRequest } from '../services/attemptsApi';
 import { useLanguage } from '../hooks/useLanguage';
+import { appendToSyncQueue } from '../services/offlineCache';
 
-const shuffleArray = (arr) => {
-  const shuffled = [...arr];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-};
+// Generates a simple unique id for offline queue items (no external dep).
+const generateLocalId = () => `offline_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-export default function TestScreen({ attemptId, testId, onExit, onRetry, isPractice = false, practiceScore = null, onPracticeNext = null }) {
+export default function TestScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { attemptId, testId, offlineQuestions, offlineTest } = route.params;
+  const isOfflineMode = Boolean(offlineQuestions);
   const { language, t } = useLanguage();
   const { authFetch } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
@@ -39,7 +39,6 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
   const [matchingLeftLayouts, setMatchingLeftLayouts] = useState({});
   const [matchingRightLayouts, setMatchingRightLayouts] = useState({});
   const isTransitioningRef = useRef(false);
-  const practiceSubmitRef = useRef(null);
 
   const [attemptSummary, setAttemptSummary] = useState(null);
   const [questions, setQuestions] = useState([]);
@@ -47,20 +46,6 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
 
   const animOpacity = useRef(new Animated.Value(1)).current;
   const animTranslate = useRef(new Animated.Value(0)).current;
-  const practiceBarAnim = useRef(new Animated.Value(0)).current;
-
-  // Looping shimmer animation for practice mode progress bar
-  useEffect(() => {
-    if (!isPractice) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(practiceBarAnim, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-        Animated.timing(practiceBarAnim, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isPractice, practiceBarAnim]);
 
   const IconX = ({ size = 18, color = '#eae9fc' }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -81,25 +66,13 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
     setIsTransitioning(false);
 
     if (mode !== 'quiz') {
-      onExit();
+      navigation.goBack();
       return;
     }
 
     const hasAnyAnswer = Object.keys(answersByQuestionId || {}).length > 0;
     if (!hasAnyAnswer) {
-      onExit();
-      return;
-    }
-
-    if (isPractice) {
-      Alert.alert(
-        t('practice.exitTitle'),
-        t('practice.exitMessage'),
-        [
-          { text: t('practice.exitStay'), style: 'cancel' },
-          { text: t('practice.exitConfirm'), style: 'destructive', onPress: () => practiceSubmitRef.current?.() },
-        ]
-      );
+      navigation.goBack();
       return;
     }
 
@@ -108,10 +81,10 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
       t('test.exitConfirmMessage'),
       [
         { text: t('test.exitConfirmStay'), style: 'cancel' },
-        { text: t('test.exitConfirmLeave'), style: 'destructive', onPress: onExit },
+        { text: t('test.exitConfirmLeave'), style: 'destructive', onPress: () => navigation.goBack() },
       ]
     );
-  }, [animOpacity, animTranslate, answersByQuestionId, isPractice, mode, onExit, t]);
+  }, [animOpacity, animTranslate, answersByQuestionId, mode, navigation, t]);
 
   const Header = ({ title, rightContent }) => (
     <View className="mt-3 flex-row items-center justify-between">
@@ -125,20 +98,36 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
 
       <View className="flex-row items-center" style={{ gap: 10 }}>
         {rightContent || null}
-        <TouchableOpacity
+        <Pressable
           className="w-11 h-11 rounded-xl border border-mf-secondary/25 bg-mf-secondary/10 items-center justify-center"
           onPress={handleExitPress}
-          activeOpacity={0.85}
+          style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <IconX />
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
 
   useEffect(() => {
     const load = async () => {
+      // ── Offline mode: use cached questions directly ────────────────────────
+      if (isOfflineMode) {
+        setTest(offlineTest || null);
+        setQuestions(Array.isArray(offlineQuestions) ? offlineQuestions : []);
+        setAttemptSummary(null);
+        setReviewQuestions(null);
+        setStep(0);
+        setMode('quiz');
+        setAnswersByQuestionId({});
+        animOpacity.setValue(1);
+        animTranslate.setValue(0);
+        setIsLoading(false);
+        return;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       if (attemptId === null || attemptId === undefined) {
         setError('Missing attempt id.');
         setIsLoading(false);
@@ -151,8 +140,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
         const payload = await getAttemptRequest({ authFetch, attemptId, language });
         setAttemptSummary(payload?.attempt || null);
         setTest(payload?.test || null);
-        const rawQuestions = Array.isArray(payload?.questions) ? payload.questions : [];
-        setQuestions(isPractice ? shuffleArray(rawQuestions) : rawQuestions);
+        setQuestions(Array.isArray(payload?.questions) ? payload.questions : []);
         setReviewQuestions(null);
         setStep(0);
         setMode('quiz');
@@ -167,7 +155,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
     };
 
     load();
-  }, [attemptId, authFetch, language]);
+  }, [attemptId, authFetch, language, isOfflineMode, offlineQuestions, offlineTest]);
 
   const animateTo = useCallback((toOpacity, toTranslate, durationMs) => {
     return new Promise((resolve) => {
@@ -276,38 +264,6 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
       return acc;
     }, {});
   }, []);
-
-  // Keep practice-mode submit handler current for the exit-press ref.
-  if (isPractice) {
-    practiceSubmitRef.current = async () => {
-      if (isSubmittingRef.current) return;
-      isSubmittingRef.current = true;
-      setIsSubmitting(true);
-      try {
-        const answersPayload = {};
-        for (const q of questions) {
-          const v = answersByQuestionId[q.id];
-          if (!v) continue;
-          if (v.answer_id) {
-            answersPayload[q.id] = { answer_id: v.answer_id };
-          } else if (v.pairs && typeof v.pairs === 'object') {
-            answersPayload[q.id] = { pairs: normalizePairs(v.pairs) };
-          } else if (typeof v.text === 'string' && v.text.trim() !== '') {
-            answersPayload[q.id] = { text: v.text.trim() };
-          }
-        }
-        const submit = await submitAttemptRequest({ authFetch, attemptId, answers: answersPayload });
-        setAttemptSummary(submit?.attempt || attemptSummary);
-        isSubmittingRef.current = false;
-        setIsSubmitting(false);
-        transitionMode('results');
-      } catch (e) {
-        isSubmittingRef.current = false;
-        setIsSubmitting(false);
-        setMode('results');
-      }
-    };
-  }
 
   const matchingModel = useMemo(() => {
     if (!isMatchingQuestion || !currentQuestion) {
@@ -737,26 +693,47 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
               answersPayload[q.id] = { text: v.text.trim() };
             }
           }
+
+          // ── Offline submit ────────────────────────────────────────────────
+          if (isOfflineMode) {
+            await appendToSyncQueue({
+              id: generateLocalId(),
+              testId: String(testId),
+              answers: answersPayload,
+              completedAt: new Date().toISOString(),
+            });
+
+            // Compute local score from is_correct flags on cached questions.
+            const total = questions.length;
+            let correct = 0;
+            for (const q of questions) {
+              const v = answersPayload[q.id];
+              if (!v) continue;
+              if (v.answer_id) {
+                const correctAnswer = (q.answers || []).find((a) => a.is_correct);
+                if (correctAnswer && String(v.answer_id) === String(correctAnswer.id)) {
+                  correct++;
+                }
+              }
+            }
+            setAttemptSummary({ total_questions: total, correct_answers: correct, score: total > 0 ? Math.round((correct / total) * 100) : 0 });
+            isSubmittingRef.current = false;
+            setIsSubmitting(false);
+            transitionMode('results');
+            return;
+          }
+          // ─────────────────────────────────────────────────────────────────
+
           const submit = await submitAttemptRequest({ authFetch, attemptId, answers: answersPayload });
           setAttemptSummary(submit?.attempt || attemptSummary);
           isSubmittingRef.current = false;
           setIsSubmitting(false);
-          if (isPractice && onPracticeNext) {
-        const correct = submit?.attempt?.correct_answers || 0;
-        const total = submit?.attempt?.total_questions || questions.length;
-        onPracticeNext({ correct, total });
-      } else {
-        transitionMode('results');
-      }
-      } catch (e) {
-        isSubmittingRef.current = false;
-        setIsSubmitting(false);
-        if (isPractice && onPracticeNext) {
-          onPracticeNext({ correct: 0, total: questions.length });
-        } else {
+          transitionMode('results');
+        } catch (e) {
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
           setSubmitError(e?.message || t('test.submitError'));
         }
-      }
       })();
       return;
     }
@@ -773,10 +750,6 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
   };
 
   const handleRetry = () => {
-    if (onRetry) {
-      onRetry();
-      return;
-    }
     setAnswersByQuestionId({});
     setStep(0);
     transitionMode('quiz');
@@ -850,51 +823,44 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
           <View className="mt-10 rounded-2xl border border-red-500/30 bg-red-500/10 p-5">
             <Text className="text-red-300 font-solway-bold text-base">{error}</Text>
           </View>
-          <TouchableOpacity className="mt-6 bg-mf-primary py-4 rounded-xl items-center" onPress={handleExitPress}>
+          <Pressable className="mt-6 bg-mf-primary py-4 rounded-xl items-center" onPress={handleExitPress}>
             <Text className="text-mf-text font-solway-bold text-lg">{t('test.exit')}</Text>
-          </TouchableOpacity>
+          </Pressable>
         </SafeAreaView>
       </View>
     );
   }
 
   if (mode === 'results') {
-    const cumulativeCorrect = (practiceScore?.correct || 0) + (score?.correct || 0);
-    const cumulativeTotal = (practiceScore?.total || 0) + (score?.total || 0);
-    const displayCorrect = isPractice ? cumulativeCorrect : (score?.correct ?? 0);
-    const displayTotal = isPractice ? cumulativeTotal : (score?.total ?? 0);
-
     return (
       <View className="flex-1 bg-transparent">
         <SafeAreaView className="flex-1 px-6" edges={['top', 'left', 'right']}>
           <StatusBar style="light" />
-          <Header title={isPractice ? t('practice.results') : t('test.results')} />
+          <Header title={t('test.results')} />
           <View className="mt-8">
-            <Text className="text-mf-secondary font-solway mt-2">{isPractice ? t('practice.title') : (test?.title || '')}</Text>
+            <Text className="text-mf-secondary font-solway mt-2">{test?.title || ''}</Text>
           </View>
 
           <View className="mt-8 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5">
             <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('test.score')}</Text>
             <Text className="text-mf-text font-solway-extrabold text-4xl mt-2">
-              {displayCorrect}/{displayTotal}
+              {score?.correct ?? 0}/{score?.total ?? 0}
             </Text>
           </View>
 
-          {isPractice ? (
-            <TouchableOpacity className="mt-6 bg-mf-primary py-4 rounded-xl items-center" onPress={onExit}>
-              <Text className="text-mf-text font-solway-bold text-lg">{t('practice.backToPractice')}</Text>
-            </TouchableOpacity>
+          {!isOfflineMode ? (
+            <Pressable className="mt-6 bg-mf-primary py-4 rounded-xl items-center" onPress={handleReview}>
+              <Text className="text-mf-text font-solway-bold text-lg">{t('test.reviewTest')}</Text>
+            </Pressable>
           ) : (
-            <>
-              <TouchableOpacity className="mt-6 bg-mf-primary py-4 rounded-xl items-center" onPress={handleReview}>
-                <Text className="text-mf-text font-solway-bold text-lg">{t('test.reviewTest')}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity className="mt-3 bg-mf-secondary/10 py-4 rounded-xl items-center border border-mf-secondary/20" onPress={handleRetry}>
-                <Text className="text-mf-secondary font-solway-bold text-lg">{t('test.retry')}</Text>
-              </TouchableOpacity>
-            </>
+            <View className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+              <Text className="text-amber-300 font-solway text-sm text-center">{t('offline.savedForSync')}</Text>
+            </View>
           )}
+
+          <Pressable className="mt-3 bg-mf-secondary/10 py-4 rounded-xl items-center border border-mf-secondary/20" onPress={handleRetry}>
+            <Text className="text-mf-secondary font-solway-bold text-lg">{t('test.retry')}</Text>
+          </Pressable>
         </SafeAreaView>
       </View>
     );
@@ -925,13 +891,13 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
           <Header
             title={t('test.review')}
             rightContent={
-              <TouchableOpacity
+              <Pressable
                 className="px-3 py-2 rounded-xl border border-mf-primary/40 bg-mf-primary/15"
                 onPress={() => transitionMode('results')}
                 disabled={isTransitioning}
               >
                 <Text className="text-mf-text font-solway-bold text-xs uppercase tracking-widest">{t('test.results')}</Text>
-              </TouchableOpacity>
+              </Pressable>
             }
           />
 
@@ -1054,21 +1020,21 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
             </View>
 
             <View className="mt-6 flex-row">
-              <TouchableOpacity
+              <Pressable
                 className={`flex-1 py-4 rounded-xl items-center border mr-3 ${step <= 0 ? 'bg-mf-secondary/5 border-mf-secondary/10' : 'bg-mf-secondary/10 border-mf-secondary/20'}`}
                 onPress={handleReviewBack}
                 disabled={step <= 0}
               >
                 <Text className="text-mf-secondary font-solway-bold">{t('test.back')}</Text>
-              </TouchableOpacity>
+              </Pressable>
 
-              <TouchableOpacity
+              <Pressable
                 className={`flex-1 py-4 rounded-xl items-center ${isTransitioning ? 'bg-mf-secondary/15' : 'bg-mf-primary'}`}
                 onPress={handleReviewNext}
                 disabled={isTransitioning}
               >
                 <Text className="text-mf-text font-solway-bold">{step >= totalQuestions - 1 ? t('test.results') : t('test.next')}</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
           </ScrollView>
@@ -1095,40 +1061,17 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
             <View className="mt-3 rounded-xl border border-mf-secondary/20 bg-mf-secondary/10 p-3">
               <View className="flex-row items-center justify-between">
                 <Text className="text-mf-secondary font-solway text-xs uppercase tracking-widest">
-                  {isPractice
-                    ? t('practice.questionNumber', { number: (practiceScore?.total || 0) + step + 1 })
-                    : t('test.progress', { current: step + 1, total: Math.max(totalQuestions, 1) })}
+                  {t('test.progress', { current: step + 1, total: Math.max(totalQuestions, 1) })}
                 </Text>
                 <Text className="text-mf-text font-solway-bold text-xs">{questionTypeLabel}</Text>
               </View>
               <View className="mt-2 h-2 rounded-full bg-mf-secondary/20 overflow-hidden">
-                {isPractice ? (
-                  <Animated.View
-                    className="h-2 rounded-full bg-mf-primary"
-                    style={{
-                      width: practiceBarAnim.interpolate({
-                        inputRange: [0, 0.5, 1],
-                        outputRange: ['15%', '85%', '15%'],
-                      }),
-                    }}
-                  />
-                ) : (
-                  <View
-                    className="h-2 rounded-full bg-mf-primary"
-                    style={{ width: `${Math.max(4, Math.min(100, ((step + 1) / Math.max(totalQuestions, 1)) * 100))}%` }}
-                  />
-                )}
+                <View
+                  className="h-2 rounded-full bg-mf-primary"
+                  style={{ width: `${Math.max(4, Math.min(100, ((step + 1) / Math.max(totalQuestions, 1)) * 100))}%` }}
+                />
               </View>
             </View>
-
-            {isPractice && practiceScore && practiceScore.total > 0 && (
-              <View className="mt-3 flex-row items-center justify-between rounded-xl border border-mf-primary/30 bg-mf-primary/10 px-4 py-2">
-                <Text className="text-mf-primary font-solway-bold text-xs uppercase tracking-widest">
-                  {t('practice.runningScore', { correct: practiceScore.correct, total: practiceScore.total })}
-                </Text>
-                <Text className="text-mf-secondary font-solway text-xs">{t('practice.title')}</Text>
-              </View>
-            )}
           </View>
 
           <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5 shadow-xl">
@@ -1153,14 +1096,14 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
                 <View className="rounded-xl border border-mf-secondary/20 bg-mf-bg/40 p-4">
                   <View className="flex-row items-center justify-between">
                     <Text className="text-mf-secondary font-solway text-sm uppercase tracking-widest">{t('test.matchingTitle')}</Text>
-                    <TouchableOpacity
+                    <Pressable
                       className="px-3 py-2 rounded-xl border border-mf-secondary/25 bg-mf-secondary/10"
                       onPress={handleToggleConnections}
                     >
                       <Text className="text-mf-secondary font-solway-bold text-sm">
                         {showConnections ? t('test.matchingConnectionsOn') : t('test.matchingConnectionsOff')}
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                   <Text className="text-mf-secondary font-solway text-sm mt-2">{t('test.matchingHint')}</Text>
 
@@ -1168,11 +1111,11 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
                     <Text className="text-mf-text font-solway-bold text-sm">
                       {t('test.matchingProgress', { current: matchingProgress.current, total: Math.max(matchingProgress.total, 1) })}
                     </Text>
-                    <TouchableOpacity onPress={handleToggleOverview}>
+                    <Pressable onPress={handleToggleOverview}>
                       <Text className="text-mf-secondary font-solway-bold text-sm">
                         {showMatchingOverview ? t('test.matchingHideOverview') : t('test.matchingShowOverview')}
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
 
                   {activeMatchingLeft ? (
@@ -1198,7 +1141,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
                           const isActiveLeft = String(activeMatchingLeftId) === leftId;
                           const hasPair = Boolean(selectedPairs[leftId]);
                           return (
-                            <TouchableOpacity
+                            <Pressable
                               key={`${leftId}-${idx}`}
                               className={`mt-3 rounded-xl border items-center py-3 ${isActiveLeft ? 'border-mf-primary bg-mf-primary/15' : 'border-mf-secondary/20 bg-mf-bg/30'}`}
                               onPress={() => handleSelectMatchingLeft(leftId)}
@@ -1210,7 +1153,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
                             >
                               <Text className="text-mf-text font-solway-bold text-sm">#{matchingLeftIndexById[leftId] || idx + 1}</Text>
                               <View className={`mt-1 w-2 h-2 rounded-full ${hasPair ? 'bg-green-300' : 'bg-mf-secondary/40'}`} />
-                            </TouchableOpacity>
+                            </Pressable>
                           );
                         })}
                       </View>
@@ -1226,7 +1169,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
                           const isLocked = usedByLeft && !isSelectedForActive;
 
                           return (
-                            <TouchableOpacity
+                            <Pressable
                               key={`right-${rightId}`}
                               className={`mt-3 rounded-xl border px-3 py-4 ${isSelectedForActive ? 'bg-mf-primary/25 border-mf-primary' : isLocked ? 'bg-mf-secondary/10 border-mf-secondary/10' : 'bg-mf-bg/40 border-mf-secondary/25'}`}
                               onPress={() => handlePickMatchingRight(rightId)}
@@ -1246,7 +1189,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
                                   </View>
                                 ) : null}
                               </View>
-                            </TouchableOpacity>
+                            </Pressable>
                           );
                         })}
                       </View>
@@ -1289,14 +1232,14 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
                 (currentQuestion?.answers || []).map((a) => {
                   const isSelected = String(selectedAnswerId) === String(a.id);
                   return (
-                    <TouchableOpacity
+                    <Pressable
                       key={a.id}
                       className={`mb-3 px-4 py-4 rounded-xl border ${isSelected ? 'bg-mf-primary/25 border-mf-primary' : 'bg-mf-bg/40 border-mf-secondary/25'}`}
                       onPress={() => handlePickAnswer(a.id)}
                       disabled={isTransitioning}
                     >
                       <Text className={`font-solway text-base ${isSelected ? 'text-mf-text font-solway-bold' : 'text-mf-text'}`}>{getAnswerLabel(currentQuestion, a)}</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   );
                 })
               )}
@@ -1311,15 +1254,15 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
           </View>
 
           <View className="mt-6 flex-row">
-            <TouchableOpacity
+            <Pressable
               className={`flex-1 py-4 rounded-xl items-center border mr-3 ${step <= 0 ? 'bg-mf-secondary/5 border-mf-secondary/10' : 'bg-mf-secondary/10 border-mf-secondary/20'}`}
               onPress={handleBack}
               disabled={step <= 0}
             >
               <Text className="text-mf-secondary font-solway-bold">{t('test.back')}</Text>
-            </TouchableOpacity>
+            </Pressable>
 
-            <TouchableOpacity
+            <Pressable
               className={`flex-1 py-4 rounded-xl items-center ${canGoNext && !isTransitioning && !isSubmitting ? 'bg-mf-primary' : 'bg-mf-secondary/15'}`}
               onPress={handleNext}
               disabled={!canGoNext || isTransitioning || isSubmitting}
@@ -1332,18 +1275,18 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
               ) : (
                 <Text className="text-mf-text font-solway-bold">{step >= questions.length - 1 ? t('test.finish') : t('test.next')}</Text>
               )}
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           {submitError ? (
             <View className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
               <Text className="text-red-300 font-solway text-sm">{submitError}</Text>
-              <TouchableOpacity
+              <Pressable
                 className="mt-2 self-start px-3 py-2 rounded-lg border border-red-400/40 bg-red-500/10"
                 onPress={handleNext}
               >
                 <Text className="text-red-200 font-solway-bold text-xs uppercase tracking-widest">{t('test.submitRetry')}</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           ) : null}
 

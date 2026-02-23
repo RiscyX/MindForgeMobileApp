@@ -1,11 +1,13 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path } from 'react-native-svg';
+import { useNavigation } from '@react-navigation/native';
 import { useLanguage } from '../hooks/useLanguage';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -15,7 +17,8 @@ import {
   getAiRequestStatus,
 } from '../services/creatorAiApi';
 
-export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
+export default function CreateTestScreen() {
+  const navigation = useNavigation();
   const { t, language } = useLanguage();
   const { authFetch, isAuthenticated, logout } = useAuth();
   const [imageAssets, setImageAssets] = useState([]);
@@ -555,15 +558,13 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
       if (!testId) {
         throw new Error('Apply succeeded but missing test_id.');
       }
-      if (typeof onOpenTestDetails === 'function') {
-        onOpenTestDetails(testId);
-      }
+      navigation.navigate('TestDetails', { testId });
     } catch (e) {
       const apiCode = e?.data?.error?.code;
       const message = mapApiErrorMessage(e, 'Apply failed.');
       setGeneration((prev) => ({ ...prev, stage: 'failed', errorMessage: apiCode ? `${message} (${apiCode})` : message }));
     }
-  }, [authFetch, draft, generation.requestId, mapApiErrorMessage, onOpenTestDetails]);
+  }, [authFetch, draft, generation.requestId, mapApiErrorMessage, navigation]);
 
   return (
     <View className="flex-1 bg-transparent">
@@ -571,12 +572,12 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
         <StatusBar style="light" />
 
         <View className="mt-3 flex-row items-center">
-          <TouchableOpacity
+          <Pressable
             className="w-11 h-11 rounded-xl border border-mf-secondary/25 bg-mf-secondary/10 items-center justify-center"
-            onPress={onBack}
+            onPress={() => navigation.goBack()}
           >
             <Text className="text-mf-text font-solway-bold text-lg">&lt;</Text>
-          </TouchableOpacity>
+          </Pressable>
           <View className="flex-1 items-center">
             <Text className="text-mf-text font-solway-extrabold text-base tracking-widest">{t('createTest.title')}</Text>
           </View>
@@ -644,7 +645,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                 <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
                   {matchingCategories.length > 0 ? (
                     matchingCategories.map((category) => (
-                      <TouchableOpacity
+                      <Pressable
                         key={`cat-option-${category.id}`}
                         className={`mb-2 px-3 py-2 rounded-lg border ${selectedCategoryId === category.id ? 'bg-mf-primary border-mf-primary' : 'bg-mf-secondary/10 border-mf-secondary/30'}`}
                         onPress={() => handleCategoryPick(category)}
@@ -652,7 +653,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                         <Text className={`font-solway-bold text-xs uppercase tracking-wider ${selectedCategoryId === category.id ? 'text-mf-text' : 'text-mf-secondary'}`}>
                           {category.name}
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     ))
                   ) : (
                     <Text className="text-mf-secondary font-solway text-sm px-2 py-2">{t('createTest.noCategoryMatches')}</Text>
@@ -689,7 +690,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                 <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
                   {matchingDifficulties.length > 0 ? (
                     matchingDifficulties.map((difficulty) => (
-                      <TouchableOpacity
+                      <Pressable
                         key={`diff-option-${difficulty.id}`}
                         className={`mb-2 px-3 py-2 rounded-lg border ${selectedDifficultyId === difficulty.id ? 'bg-mf-primary border-mf-primary' : 'bg-mf-secondary/10 border-mf-secondary/30'}`}
                         onPress={() => handleDifficultyPick(difficulty)}
@@ -697,7 +698,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                         <Text className={`font-solway-bold text-xs uppercase tracking-wider ${selectedDifficultyId === difficulty.id ? 'text-mf-text' : 'text-mf-secondary'}`}>
                           {difficulty.name}
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     ))
                   ) : (
                     <Text className="text-mf-secondary font-solway text-sm px-2 py-2">{t('createTest.noDifficultyMatches')}</Text>
@@ -717,12 +718,12 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
             {metadataState.errorMessage ? (
               <>
                 <Text className="text-red-300 font-solway mt-3">{metadataState.errorMessage}</Text>
-                <TouchableOpacity
+                <Pressable
                   className="mt-3 bg-mf-secondary/10 py-3 rounded-xl items-center border border-mf-secondary/30"
                   onPress={loadMetadata}
                 >
                   <Text className="text-mf-text font-solway-bold text-xs uppercase tracking-widest">{t('createTest.retryMetadataLoad')}</Text>
-                </TouchableOpacity>
+                </Pressable>
               </>
             ) : null}
           </View>
@@ -730,12 +731,12 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
           <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5">
             <View className="flex-row items-center justify-between">
               <Text className="text-mf-text font-solway-extrabold">{t('createTest.images')}</Text>
-              <TouchableOpacity
+              <Pressable
                 className="px-4 py-3 rounded-2xl border border-mf-primary/30 bg-mf-primary/10"
                 onPress={handleAddImagePress}
               >
                 <Text className="text-mf-text font-solway-extrabold text-xs uppercase tracking-widest">{t('createTest.addImage')}</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             {imageAssets.length > 0 ? (
@@ -758,7 +759,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                         resizeMode="cover"
                       />
 
-                      <TouchableOpacity
+                      <Pressable
                         onPress={() => handleRemoveImage(asset.uri)}
                         className="absolute top-3 right-3 w-9 h-9 rounded-xl items-center justify-center"
                         style={{
@@ -774,17 +775,17 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
                         <IconTrash />
-                      </TouchableOpacity>
+                      </Pressable>
                     </View>
                   ))}
                 </ScrollView>
 
-                <TouchableOpacity
+                <Pressable
                   className="mt-4 bg-red-500/10 py-3 rounded-2xl items-center border border-red-500/30"
                   onPress={handleRemoveAllImages}
                 >
                   <Text className="text-red-300 font-solway-bold text-sm uppercase tracking-widest">{t('createTest.removeAllImages')}</Text>
-                </TouchableOpacity>
+                </Pressable>
               </>
             ) : (
               <View className="mt-4 rounded-2xl border border-mf-secondary/20 bg-mf-bg/40 p-4">
@@ -794,7 +795,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
           </View>
 
           <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5">
-            <TouchableOpacity
+            <Pressable
               className="bg-mf-primary py-4 rounded-xl items-center shadow-lg shadow-mf-primary/30"
               onPress={handleGenerate}
               disabled={generation.stage === 'creating' || generation.stage === 'polling' || generation.stage === 'applying' || metadataState.loading}
@@ -814,7 +815,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
               ) : (
                 <Text className="text-mf-text font-solway-bold text-lg">{t('createTest.generateButton')}</Text>
               )}
-            </TouchableOpacity>
+            </Pressable>
 
             {statusLabel ? (
               <Text className="text-mf-secondary font-solway mt-3">
@@ -837,22 +838,22 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                   {t('createTest.languageLabel')}
                 </Text>
                 <View className="w-full rounded-2xl border border-mf-secondary/30 bg-mf-bg/80 p-2 flex-row">
-                  <TouchableOpacity
+                  <Pressable
                     className={`flex-1 rounded-xl py-3 items-center ${editLanguage === 'en' ? 'bg-mf-primary' : 'bg-transparent'}`}
                     onPress={() => setEditLanguage('en')}
                   >
                     <Text className={`font-solway-bold text-xs uppercase tracking-widest ${editLanguage === 'en' ? 'text-mf-text' : 'text-mf-secondary'}`}>
                       EN
                     </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                  </Pressable>
+                  <Pressable
                     className={`flex-1 rounded-xl py-3 items-center ${editLanguage === 'hu' ? 'bg-mf-primary' : 'bg-transparent'}`}
                     onPress={() => setEditLanguage('hu')}
                   >
                     <Text className={`font-solway-bold text-xs uppercase tracking-widest ${editLanguage === 'hu' ? 'text-mf-text' : 'text-mf-secondary'}`}>
                       HU
                     </Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               </View>
 
@@ -885,7 +886,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
               <View className="mt-6">
                 <View className="flex-row items-center justify-between">
                   <Text className="text-mf-text font-solway-extrabold">{t('createTest.questionsLabel')}</Text>
-                  <TouchableOpacity
+                  <Pressable
                     className="px-4 py-3 rounded-2xl border border-mf-primary/30 bg-mf-primary/10"
                     onPress={() => {
                       setDraft((prev) => {
@@ -904,7 +905,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                     }}
                   >
                     <Text className="text-mf-text font-solway-extrabold text-xs uppercase tracking-widest">{t('createTest.addQuestion')}</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
 
                 {(draft.questions || []).map((q, qIndex) => {
@@ -916,7 +917,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                     <View key={`q-${qIndex}`} className="mt-4 rounded-2xl border border-mf-secondary/20 bg-mf-bg/30 p-4">
                       <View className="flex-row items-center justify-between">
                         <Text className="text-mf-text font-solway-extrabold">{`#${qIndex + 1}`}</Text>
-                        <TouchableOpacity
+                        <Pressable
                           className="px-3 py-2 rounded-xl border border-red-500/30 bg-red-500/10"
                           onPress={() => {
                             setDraft((prev) => {
@@ -928,7 +929,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                           }}
                         >
                           <Text className="text-red-300 font-solway-bold text-xs uppercase tracking-widest">{t('createTest.remove')}</Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       </View>
 
                       <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mt-4 mb-2">
@@ -936,7 +937,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                       </Text>
                       <View className="flex-row">
                         {['multiple_choice', 'true_false', 'text'].map((tp) => (
-                          <TouchableOpacity
+                          <Pressable
                             key={tp}
                             className={`mr-2 px-3 py-2 rounded-xl border ${qType === tp ? 'bg-mf-primary border-mf-primary' : 'bg-mf-secondary/10 border-mf-secondary/30'}`}
                             onPress={() => ensureQuestionAnswersForType(qIndex, tp)}
@@ -944,7 +945,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                             <Text className={`font-solway-bold text-xs uppercase tracking-widest ${qType === tp ? 'text-mf-text' : 'text-mf-secondary'}`}>
                               {tp === 'multiple_choice' ? 'MC' : tp === 'true_false' ? 'T/F' : 'TXT'}
                             </Text>
-                          </TouchableOpacity>
+                          </Pressable>
                         ))}
                       </View>
 
@@ -966,12 +967,12 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                               <View key={`a-${qIndex}-${aIndex}`} className="mt-3 rounded-xl border border-mf-secondary/20 bg-mf-bg/50 p-3">
                                 <View className="flex-row items-center justify-between">
                                   <Text className="text-mf-secondary font-solway text-xs uppercase tracking-widest">{`A${aIndex + 1}`}</Text>
-                                  <TouchableOpacity
+                                  <Pressable
                                     className={`px-3 py-2 rounded-xl border ${isCorrect ? 'bg-green-500/15 border-green-500/35' : 'bg-mf-secondary/10 border-mf-secondary/25'}`}
                                     onPress={() => updateDraftAt(['questions', qIndex, 'answers', aIndex, 'is_correct'], !isCorrect)}
                                   >
                                     <Text className={`${isCorrect ? 'text-green-200' : 'text-mf-secondary'} font-solway-bold text-xs uppercase tracking-widest`}>{t('createTest.correct')}</Text>
-                                  </TouchableOpacity>
+                                  </Pressable>
                                 </View>
 
                                 <TextInput
@@ -982,7 +983,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                                 />
 
                                 {qType === 'multiple_choice' ? (
-                                  <TouchableOpacity
+                                  <Pressable
                                     className="mt-3 self-start px-3 py-2 rounded-xl border border-red-500/30 bg-red-500/10"
                                     onPress={() => {
                                       setDraft((prev) => {
@@ -996,14 +997,14 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                                     }}
                                   >
                                     <Text className="text-red-300 font-solway-bold text-xs uppercase tracking-widest">{t('createTest.remove')}</Text>
-                                  </TouchableOpacity>
+                                  </Pressable>
                                 ) : null}
                               </View>
                             );
                           })}
 
                           {qType === 'multiple_choice' ? (
-                            <TouchableOpacity
+                            <Pressable
                               className="mt-4 px-4 py-3 rounded-2xl border border-mf-primary/30 bg-mf-primary/10 self-start"
                               onPress={() => {
                                 setDraft((prev) => {
@@ -1018,7 +1019,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                               }}
                             >
                               <Text className="text-mf-text font-solway-extrabold text-xs uppercase tracking-widest">{t('createTest.addAnswer')}</Text>
-                            </TouchableOpacity>
+                            </Pressable>
                           ) : null}
                         </View>
                       )}
@@ -1027,7 +1028,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                 })}
               </View>
 
-              <TouchableOpacity
+              <Pressable
                 className="mt-6 bg-mf-primary py-4 rounded-xl items-center shadow-lg shadow-mf-primary/30"
                 onPress={handleApplyDraft}
                 disabled={generation.stage === 'applying'}
@@ -1041,7 +1042,7 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                 ) : (
                   <Text className="text-mf-text font-solway-bold text-lg">{t('createTest.applyButton')}</Text>
                 )}
-              </TouchableOpacity>
+              </Pressable>
             </View>
           ) : null}
         </ScrollView>
@@ -1073,22 +1074,22 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
               <Text className="text-mf-text font-solway-extrabold text-base tracking-wide">{t('createTest.addImage')}</Text>
               <Text className="text-mf-secondary font-solway mt-2">{t('createTest.comingSoon')}</Text>
 
-              <TouchableOpacity
+              <Pressable
                 className="mt-4 bg-mf-primary py-4 rounded-2xl items-center border border-white/10"
                 onPress={takePhoto}
               >
                 <Text className="text-mf-text font-solway-bold text-base uppercase tracking-widest">{t('createTest.takePhoto')}</Text>
-              </TouchableOpacity>
+              </Pressable>
 
-              <TouchableOpacity
+              <Pressable
                 className="mt-3 bg-mf-secondary/10 py-4 rounded-2xl items-center border border-mf-secondary/20"
                 onPress={pickFromLibrary}
               >
                 <Text className="text-mf-text font-solway-bold text-base uppercase tracking-widest">{t('createTest.chooseFromLibrary')}</Text>
-              </TouchableOpacity>
+              </Pressable>
 
               {imageAssets.length > 0 ? (
-                <TouchableOpacity
+                <Pressable
                   className="mt-3 bg-red-500/10 py-4 rounded-2xl items-center border border-red-500/30"
                   onPress={() => {
                     handleRemoveAllImages();
@@ -1096,15 +1097,15 @@ export default function CreateTestScreen({ onBack, onOpenTestDetails }) {
                   }}
                 >
                   <Text className="text-red-300 font-solway-bold text-base uppercase tracking-widest">{t('createTest.removeAllImages')}</Text>
-                </TouchableOpacity>
+                </Pressable>
               ) : null}
 
-              <TouchableOpacity
+              <Pressable
                 className="mt-3 py-3 items-center"
                 onPress={() => setIsPickerOpen(false)}
               >
                 <Text className="text-mf-secondary font-solway-bold text-sm uppercase tracking-widest">{t('common.cancel')}</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </Modal>

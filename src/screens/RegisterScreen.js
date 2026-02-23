@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useNavigation } from '@react-navigation/native';
 import { useLanguage } from '../hooks/useLanguage';
-import AuthBottomNav from '../components/AuthBottomNav';
+import { useAuth } from '../hooks/useAuth';
 
-export default function RegisterScreen({ onBack, onGoLogin, onGoRegister, onRegister }) {
+export default function RegisterScreen() {
+  const navigation = useNavigation();
   const { t } = useLanguage();
+  const { register } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -35,7 +38,7 @@ export default function RegisterScreen({ onBack, onGoLogin, onGoRegister, onRegi
     setIsSubmitting(true);
 
     try {
-      const response = await onRegister({
+      const response = await register({
         email: email.trim(),
         password,
         passwordConfirm: confirmPassword,
@@ -44,8 +47,8 @@ export default function RegisterScreen({ onBack, onGoLogin, onGoRegister, onRegi
       setPassword('');
       setConfirmPassword('');
       setTimeout(() => {
-        onGoLogin();
-      }, 3000);
+        navigation.navigate('Login');
+      }, 700);
     } catch (registerError) {
       if (registerError?.status === 404) {
         setError(t('register.unavailable'));
@@ -119,7 +122,7 @@ export default function RegisterScreen({ onBack, onGoLogin, onGoRegister, onRegi
           {error ? <Text className="text-red-300 text-sm font-solway mb-3">{error}</Text> : null}
           {success ? <Text className="text-green-300 text-sm font-solway mb-3">{success}</Text> : null}
 
-          <TouchableOpacity
+          <Pressable
             className="w-full bg-mf-primary py-4 rounded-xl items-center shadow-lg shadow-mf-primary/30 active:bg-mf-primary/80"
             onPress={handleRegisterPress}
             disabled={isSubmitting}
@@ -129,30 +132,24 @@ export default function RegisterScreen({ onBack, onGoLogin, onGoRegister, onRegi
             ) : (
               <Text className="text-mf-text font-solway-bold text-lg">{t('register.cta')}</Text>
             )}
-          </TouchableOpacity>
+          </Pressable>
 
-          <TouchableOpacity
+          <Pressable
             className="w-full bg-mf-secondary/10 py-4 rounded-xl items-center border border-mf-secondary/20 active:bg-mf-secondary/20 mt-2"
-            onPress={onBack}
+            onPress={() => navigation.goBack()}
             disabled={isSubmitting}
           >
             <Text className="text-mf-secondary font-solway-bold text-lg">{t('common.cancel')}</Text>
-          </TouchableOpacity>
+          </Pressable>
 
           <View className="mt-6 flex-row justify-center">
             <Text className="text-mf-secondary font-solway">{t('register.hasAccount')} </Text>
-            <TouchableOpacity onPress={onGoLogin}>
+            <Pressable onPress={() => navigation.navigate('Login')}>
               <Text className="text-mf-primary font-solway-bold">{t('common.login')}</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </SafeAreaView>
-
-      <AuthBottomNav
-        active="register"
-        onLoginPress={onGoLogin}
-        onRegisterPress={onGoRegister}
-      />
     </View>
   );
 }

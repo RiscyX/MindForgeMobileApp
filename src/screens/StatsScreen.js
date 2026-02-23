@@ -1,13 +1,13 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLanguage } from '../hooks/useLanguage';
 import { useAuth } from '../hooks/useAuth';
-import AppBottomNav from '../components/AppBottomNav';
 import { fetchQuizStatsRequest } from '../services/statsApi';
+import GlassCard from '../components/GlassCard';
 
-export default function StatsScreen({ onGoTests, onGoPractice, onGoStats, onGoProfile }) {
+export default function StatsScreen() {
   const { t, language } = useLanguage();
   const { authFetch } = useAuth();
 
@@ -184,8 +184,8 @@ export default function StatsScreen({ onGoTests, onGoPractice, onGoStats, onGoPr
     const lastAt = getLastAttemptAt(item);
 
     return (
-      <View className="mb-4 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5">
-        <View className="flex-row items-start justify-between">
+      <GlassCard style={{ marginBottom: 16 }}>
+        <View className="p-5 flex-row items-start justify-between">
           <View className="flex-1 pr-3">
             <Text className="text-mf-text font-solway-extrabold text-lg">{getQuizTitle(item)}</Text>
             {attemptsCount !== null ? (
@@ -208,7 +208,7 @@ export default function StatsScreen({ onGoTests, onGoPractice, onGoStats, onGoPr
             ) : null}
           </View>
         </View>
-      </View>
+      </GlassCard>
     );
   };
 
@@ -222,25 +222,29 @@ export default function StatsScreen({ onGoTests, onGoPractice, onGoStats, onGoPr
           <Text className="text-mf-secondary text-sm font-solway mt-2">{t('stats.subtitle')}</Text>
         </View>
 
-        <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-4">
-          <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('stats.taken')}</Text>
-          <Text className="text-mf-text font-solway-extrabold text-2xl mt-2">{summary.taken}</Text>
-        </View>
+        <GlassCard style={{ marginTop: 24 }}>
+          <View className="p-4">
+            <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('stats.taken')}</Text>
+            <Text className="text-mf-text font-solway-extrabold text-2xl mt-2">{summary.taken}</Text>
+          </View>
+        </GlassCard>
 
-        <View className="mt-3 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-4">
-          <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('stats.bestScore')}</Text>
-          <Text className="text-mf-text font-solway-extrabold text-2xl mt-2">{formatFraction(summary.bestFrac) || formatPercent(summary.bestPercent)}</Text>
-          {summary.bestFrac && summary.bestPercent !== null ? (
-            <Text className="text-mf-secondary font-solway text-xs mt-1">{formatPercent(summary.bestPercent)}</Text>
-          ) : null}
-        </View>
+        <GlassCard style={{ marginTop: 12 }}>
+          <View className="p-4">
+            <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('stats.bestScore')}</Text>
+            <Text className="text-mf-text font-solway-extrabold text-2xl mt-2">{formatFraction(summary.bestFrac) || formatPercent(summary.bestPercent)}</Text>
+            {summary.bestFrac && summary.bestPercent !== null ? (
+              <Text className="text-mf-secondary font-solway text-xs mt-1">{formatPercent(summary.bestPercent)}</Text>
+            ) : null}
+          </View>
+        </GlassCard>
 
         {error ? (
           <View className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
             <Text className="text-red-300 font-solway-bold">{error}</Text>
-            <TouchableOpacity className="mt-3 bg-mf-primary py-3 rounded-xl items-center" onPress={load}>
+            <Pressable className="mt-3 bg-mf-primary py-3 rounded-xl items-center" onPress={load}>
               <Text className="text-mf-text font-solway-bold">{t('stats.refresh')}</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         ) : null}
 
@@ -250,9 +254,11 @@ export default function StatsScreen({ onGoTests, onGoPractice, onGoStats, onGoPr
             <Text className="text-mf-secondary font-solway mt-4">{t('common.loading')}</Text>
           </View>
         ) : quizzes.length === 0 ? (
-          <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5">
-            <Text className="text-mf-secondary font-solway">{t('stats.noData')}</Text>
-          </View>
+          <GlassCard style={{ marginTop: 24 }}>
+            <View className="p-5">
+              <Text className="text-mf-secondary font-solway">{t('stats.noData')}</Text>
+            </View>
+          </GlassCard>
         ) : (
           <FlatList
             className="mt-6"
@@ -272,14 +278,6 @@ export default function StatsScreen({ onGoTests, onGoPractice, onGoStats, onGoPr
           />
         )}
       </SafeAreaView>
-
-      <AppBottomNav
-        active="stats"
-        onTestsPress={onGoTests}
-        onPracticePress={onGoPractice}
-        onStatsPress={onGoStats}
-        onProfilePress={onGoProfile}
-      />
     </View>
   );
 }
