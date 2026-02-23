@@ -35,7 +35,7 @@ export default function PracticeSelectScreen({
       return;
     }
     const randomIndex = Math.floor(Math.random() * testsInCategory.length);
-    onStart(testsInCategory[randomIndex]);
+    onStart(testsInCategory[randomIndex], testsInCategory);
   };
 
   if (loading) {

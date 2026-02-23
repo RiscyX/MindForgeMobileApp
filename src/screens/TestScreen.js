@@ -17,7 +17,7 @@ const shuffleArray = (arr) => {
   return shuffled;
 };
 
-export default function TestScreen({ attemptId, testId, onExit, onRetry, isPractice = false }) {
+export default function TestScreen({ attemptId, testId, onExit, onRetry, isPractice = false, practiceScore = null, onPracticeNext = null }) {
   const { language, t } = useLanguage();
   const { authFetch } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
@@ -727,12 +727,22 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
           setAttemptSummary(submit?.attempt || attemptSummary);
           isSubmittingRef.current = false;
           setIsSubmitting(false);
-          transitionMode('results');
-        } catch (e) {
-          isSubmittingRef.current = false;
-          setIsSubmitting(false);
+          if (isPractice && onPracticeNext) {
+        const correct = submit?.attempt?.correct_answers || 0;
+        const total = submit?.attempt?.total_questions || questions.length;
+        onPracticeNext({ correct, total });
+      } else {
+        transitionMode('results');
+      }
+      } catch (e) {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        if (isPractice && onPracticeNext) {
+          onPracticeNext({ correct: 0, total: questions.length });
+        } else {
           setSubmitError(e?.message || t('test.submitError'));
         }
+      }
       })();
       return;
     }
@@ -835,19 +845,24 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
   }
 
   if (mode === 'results') {
+    const cumulativeCorrect = (practiceScore?.correct || 0) + (score?.correct || 0);
+    const cumulativeTotal = (practiceScore?.total || 0) + (score?.total || 0);
+    const displayCorrect = isPractice ? cumulativeCorrect : (score?.correct ?? 0);
+    const displayTotal = isPractice ? cumulativeTotal : (score?.total ?? 0);
+
     return (
       <View className="flex-1 bg-transparent">
         <SafeAreaView className="flex-1 px-6" edges={['top', 'left', 'right']}>
           <StatusBar style="light" />
           <Header title={isPractice ? t('practice.results') : t('test.results')} />
           <View className="mt-8">
-            <Text className="text-mf-secondary font-solway mt-2">{test?.title || ''}</Text>
+            <Text className="text-mf-secondary font-solway mt-2">{isPractice ? t('practice.title') : (test?.title || '')}</Text>
           </View>
 
           <View className="mt-8 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5">
             <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('test.score')}</Text>
             <Text className="text-mf-text font-solway-extrabold text-4xl mt-2">
-              {score?.correct ?? 0}/{score?.total ?? 0}
+              {displayCorrect}/{displayTotal}
             </Text>
           </View>
 
@@ -1077,6 +1092,15 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry, isPract
                 />
               </View>
             </View>
+
+            {isPractice && practiceScore && practiceScore.total > 0 && (
+              <View className="mt-3 flex-row items-center justify-between rounded-xl border border-mf-primary/30 bg-mf-primary/10 px-4 py-2">
+                <Text className="text-mf-primary font-solway-bold text-xs uppercase tracking-widest">
+                  {t('practice.runningScore', { correct: practiceScore.correct, total: practiceScore.total })}
+                </Text>
+                <Text className="text-mf-secondary font-solway text-xs">{t('practice.title')}</Text>
+              </View>
+            )}
           </View>
 
           <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5 shadow-xl">
