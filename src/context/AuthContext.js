@@ -220,11 +220,15 @@ export function AuthProvider({ children }) {
               });
             }
           } catch (error) {
-            console.warn('[auth/bootstrap] /auth/me failed:', error?.message || error);
+            if (__DEV__) {
+              console.warn('[auth/bootstrap] /auth/me failed:', error?.message || error);
+            }
           }
         }
       } catch (error) {
-        console.warn('[auth/bootstrap] session restore failed:', error?.message || error);
+        if (__DEV__) {
+          console.warn('[auth/bootstrap] session restore failed:', error?.message || error);
+        }
         await clearSession();
       } finally {
         setIsBootstrapping(false);
@@ -234,8 +238,8 @@ export function AuthProvider({ children }) {
     bootstrap();
   }, [clearSession, persistSession, refresh]);
 
-  const login = useCallback(async ({ email, password }) => {
-    const response = await loginRequest({ email, password });
+  const login = useCallback(async ({ email, password, lang }) => {
+    const response = await loginRequest({ email, password, lang });
 
     const extracted = extractSessionFromAuthResponse(response);
     const nextAccessToken = extracted.nextAccessToken;
@@ -281,7 +285,9 @@ export function AuthProvider({ children }) {
         await logoutRequest(tokenSnapshot);
       }
     } catch (error) {
-      console.warn('[auth/logout] backend logout failed:', error?.message || error);
+      if (__DEV__) {
+        console.warn('[auth/logout] backend logout failed:', error?.message || error);
+      }
     }
   }, [accessToken, clearSession, refreshToken]);
 

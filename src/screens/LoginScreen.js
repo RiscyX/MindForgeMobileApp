@@ -1,12 +1,16 @@
 import { useState } from 'react';
-import { Alert, View, Text, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useNavigation } from '@react-navigation/native';
 import { useLanguage } from '../hooks/useLanguage';
-import AuthBottomNav from '../components/AuthBottomNav';
+import { useAuth } from '../hooks/useAuth';
+import { GradientButton, OutlineButton } from '../components/MFButton';
 
-export default function LoginScreen({ onLogin, onBack, onGoRegister, onGoLogin }) {
+export default function LoginScreen() {
+  const navigation = useNavigation();
   const { t } = useLanguage();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -29,7 +33,8 @@ export default function LoginScreen({ onLogin, onBack, onGoRegister, onGoLogin }
     setError('');
 
     try {
-      await onLogin({ email: normalizedEmail, password });
+      await login({ email: normalizedEmail, password });
+      navigation.goBack();
     } catch (loginError) {
       setError(loginError?.message || t('login.loginFailed'));
     } finally {
@@ -81,48 +86,36 @@ export default function LoginScreen({ onLogin, onBack, onGoRegister, onGoLogin }
               onChangeText={setPassword}
               editable={!isSubmitting}
             />
-            <TouchableOpacity className="self-end mt-2" onPress={() => Alert.alert(t('login.forgotPassword'), t('login.forgotPasswordHint'))}>
+            <Pressable className="self-end mt-2" onPress={() => navigation.navigate('ForgotPassword')}>
               <Text className="text-mf-primary text-xs font-solway-bold">{t('login.forgotPassword')}</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           {error ? <Text className="text-red-300 text-sm font-solway mb-3">{error}</Text> : null}
 
-          <TouchableOpacity
-            className="w-full bg-mf-primary py-4 rounded-xl items-center shadow-lg shadow-mf-primary/30 active:bg-mf-primary/80"
+          <GradientButton
             onPress={handleLoginPress}
+            loading={isSubmitting}
             disabled={isSubmitting}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color="#eae9fc" />
-            ) : (
-              <Text className="text-mf-text font-solway-bold text-lg">{t('login.logIn')}</Text>
-            )}
-          </TouchableOpacity>
+            label={t('login.logIn')}
+            style={{ marginBottom: 8 }}
+          />
 
-          <TouchableOpacity 
-            className="w-full bg-mf-secondary/10 py-4 rounded-xl items-center border border-mf-secondary/20 active:bg-mf-secondary/20 mt-2"
-            onPress={onBack}
+          <OutlineButton
+            onPress={() => navigation.goBack()}
             disabled={isSubmitting}
-          >
-            <Text className="text-mf-secondary font-solway-bold text-lg">{t('common.cancel')}</Text>
-          </TouchableOpacity>
+            label={t('common.cancel')}
+          />
         </View>
 
         <View className="mt-10 flex-row justify-center">
           <Text className="text-mf-secondary font-solway">{t('login.noAccount')} </Text>
-          <TouchableOpacity onPress={onGoRegister}>
+          <Pressable onPress={() => navigation.navigate('Register')}>
             <Text className="text-mf-primary font-solway-bold">{t('login.signUp')}</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
 
       </SafeAreaView>
-
-      <AuthBottomNav
-        active="login"
-        onLoginPress={onGoLogin}
-        onRegisterPress={onGoRegister}
-      />
     </View>
   );
 }

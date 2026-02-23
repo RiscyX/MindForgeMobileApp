@@ -1,12 +1,11 @@
-const DEFAULT_API_BASE_URL = 'https://undefined.stud.vts.su.ac.rs/api/v1';
-const EXPECTED_API_ORIGIN = 'https://undefined.stud.vts.su.ac.rs';
+import { setOnlineStatus } from './networkStatus';
 
 const trimTrailingSlash = (value) => String(value || '').replace(/\/+$/, '');
 
 const normalizeApiBaseUrl = (value) => {
   const base = trimTrailingSlash(value);
   if (!base) {
-    return DEFAULT_API_BASE_URL;
+    return null;
   }
 
   let normalized = base;
@@ -16,19 +15,13 @@ const normalizeApiBaseUrl = (value) => {
   }
 
   if (!normalized.endsWith('/api/v1')) {
-    return DEFAULT_API_BASE_URL;
+    return null;
   }
 
   try {
-    const origin = new URL(normalized).origin;
-    if (origin !== EXPECTED_API_ORIGIN) {
-      if (__DEV__) {
-        console.warn('[httpClient] Ignoring unsupported API origin:', origin);
-      }
-      return DEFAULT_API_BASE_URL;
-    }
+    new URL(normalized);
   } catch {
-    return DEFAULT_API_BASE_URL;
+    return null;
   }
 
   return normalized;
@@ -37,10 +30,22 @@ const normalizeApiBaseUrl = (value) => {
 const resolveApiBaseUrl = () => {
   const envBase = process.env.EXPO_PUBLIC_API_BASE_URL;
   if (typeof envBase === 'string' && envBase.trim()) {
-    return normalizeApiBaseUrl(envBase.trim());
+    const normalized = normalizeApiBaseUrl(envBase.trim());
+    if (normalized) {
+      return normalized;
+    }
+    if (__DEV__) {
+      console.warn(
+        '[httpClient] EXPO_PUBLIC_API_BASE_URL is invalid or does not end with /api/v1:',
+        envBase,
+      );
+    }
   }
 
-  return normalizeApiBaseUrl(DEFAULT_API_BASE_URL);
+  throw new Error(
+    'EXPO_PUBLIC_API_BASE_URL is not configured. ' +
+    'Set it in your .env file (e.g. EXPO_PUBLIC_API_BASE_URL=https://your-server.com/api/v1).',
+  );
 };
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -122,17 +127,15 @@ export const apiRequest = async (endpoint, options = {}) => {
       ...headers,
     };
 
-    if (__DEV__ && endpoint.includes('/tests/') && endpoint.endsWith('/start')) {
-      const authLen = requestHeaders.Authorization ? String(requestHeaders.Authorization).length : 0;
-      console.log('[apiRequest]', method, endpoint, 'authHeader=', Boolean(requestHeaders.Authorization), 'authLen=', authLen);
-    }
-
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method,
       headers: requestHeaders,
       body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
       signal: controller.signal,
     });
+
+    // We got a response — we're online.
+    setOnlineStatus(true);
 
     const responseMeta = {
       endpoint,
@@ -189,6 +192,10 @@ export const apiRequest = async (endpoint, options = {}) => {
   } catch (error) {
     if (error.name === 'AbortError') {
       throw new ApiError('Request timed out', 408, null);
+    }
+    // A raw TypeError (e.g. "Network request failed") means no connectivity.
+    if (error instanceof TypeError) {
+      setOnlineStatus(false);
     }
     throw error;
   } finally {

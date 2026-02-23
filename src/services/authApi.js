@@ -10,12 +10,14 @@ const buildLoginError = (error) => {
   const responseBody = error instanceof ApiError ? error.data : null;
   const networkMessage = error?.message || 'Unknown network error';
 
-  console.error('[auth/login] failed', {
-    requestUrl: `${API_BASE_URL}/auth/login`,
-    statusCode: status,
-    responseBody: responseBody ? JSON.stringify(responseBody) : null,
-    networkError: networkMessage,
-  });
+  if (__DEV__) {
+    console.error('[auth/login] failed', {
+      requestUrl: `${API_BASE_URL}/auth/login`,
+      statusCode: status,
+      responseBody: responseBody ? JSON.stringify(responseBody) : null,
+      networkError: networkMessage,
+    });
+  }
 
   if (error instanceof ApiError) {
     return new ApiError(error.message || 'Login failed', error.status, error.data);
@@ -24,7 +26,7 @@ const buildLoginError = (error) => {
   return new ApiError(networkMessage, 0, null);
 };
 
-export const loginRequest = async ({ email, password }) => {
+export const loginRequest = async ({ email, password, lang = 'en' }) => {
   try {
     return await apiRequest('/auth/login', {
       method: 'POST',
@@ -32,7 +34,7 @@ export const loginRequest = async ({ email, password }) => {
       body: {
         email: email.trim().toLowerCase(),
         password,
-        lang: 'hu',
+        lang,
       },
     });
   } catch (error) {
@@ -78,5 +80,28 @@ export const meRequest = async ({ accessToken }) => {
     method: 'GET',
     accessToken,
     headers: AUTH_JSON_HEADERS,
+  });
+};
+
+export const forgotPasswordRequest = async ({ email, lang = 'en' }) => {
+  return apiRequest('/auth/forgot-password', {
+    method: 'POST',
+    headers: AUTH_JSON_HEADERS,
+    body: {
+      email: email.trim().toLowerCase(),
+      lang,
+    },
+  });
+};
+
+export const resetPasswordRequest = async ({ token, password, passwordConfirm }) => {
+  return apiRequest('/auth/reset-password', {
+    method: 'POST',
+    headers: AUTH_JSON_HEADERS,
+    body: {
+      token,
+      password,
+      password_confirm: passwordConfirm,
+    },
   });
 };

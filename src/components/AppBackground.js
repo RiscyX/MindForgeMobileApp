@@ -1,8 +1,6 @@
 import React from 'react';
-import { StyleSheet, View, Dimensions } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Svg, { Defs, RadialGradient, Stop, Rect } from 'react-native-svg';
-
-const { width, height } = Dimensions.get('window');
 
 export default function AppBackground({ children }) {
   return (

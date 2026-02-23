@@ -68,7 +68,9 @@ export const fetchTests = async ({ language = 'en' } = {}) => {
 
     return tests;
   } catch (error) {
-    console.error('Fetch tests error:', error);
+    if (__DEV__) {
+      console.error('Fetch tests error:', error);
+    }
     const lang = normalizeLanguage(language);
     return __DEV__ ? FALLBACK_TESTS[lang] : [];
   }
@@ -101,22 +103,16 @@ export const fetchDailyQuote = async () => {
     return null;
 
   } catch (error) {
-    console.warn('Daily quote fetch error:', error);
+    if (__DEV__) {
+      console.warn('Daily quote fetch error:', error);
+    }
     return null;
   }
 };
 
-// Szimuláltuk az adatlekérést egy kis késleltetéssel (Header adatok)
+// Header data (welcome message, subtitle, etc.)
+// TODO: Replace with real API call when /home endpoint is available on the backend.
 export const fetchHomeData = async (language = 'en') => {
-  // Valós hívás esetén ez lenne:
-  // const response = await fetch(`${BASE_URL}/home`);
-  // return response.json();
-
-  // Most szimuláljuk a választ:
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const lang = normalizeLanguage(language);
-      resolve(FALLBACK_HOME[lang]);
-    }, 1500);
-  });
+  const lang = normalizeLanguage(language);
+  return FALLBACK_HOME[lang];
 };

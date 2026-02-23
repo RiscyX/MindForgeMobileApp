@@ -1,29 +1,44 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useMemo, useState } from 'react';
-import { Text, View, TouchableOpacity, ActivityIndicator, FlatList, RefreshControl, ScrollView, TextInput, Keyboard, Pressable, StyleSheet } from 'react-native';
+import { Text, View, ActivityIndicator, FlatList, RefreshControl, ScrollView, TextInput, Keyboard, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { cssInterop } from 'nativewind';
 import { useHomeData } from '../hooks/useHomeData';
+import { useRecentAttempts } from '../hooks/useRecentAttempts';
 import { useLanguage } from '../hooks/useLanguage';
-import AuthBottomNav from '../components/AuthBottomNav';
-import AppBottomNav from '../components/AppBottomNav';
+import { useAuth } from '../hooks/useAuth';
+import { useTestActions } from '../context/TestActionsContext';
+import { useFavorites } from '../context/FavoritesContext';
 import TestCard from '../components/TestCard';
+import GlassCard from '../components/GlassCard';
+import RecentAttemptsWidget from '../components/RecentAttemptsWidget';
 
 cssInterop(SafeAreaView, { className: 'style' });
 
-export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTestId, user, onGoCreateTest, isLoggedIn, onGoLogin, onGoRegister, onGoTests, onGoStats, onGoProfile }) {
+export default function HomeScreen() {
+  const navigation = useNavigation();
   const { language, t } = useLanguage();
+  const { user, isAuthenticated, authFetch } = useAuth();
+  const { startingTestId, handleStartTest } = useTestActions();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const { data, tests, loading, refreshing, error, refetch } = useHomeData({ language });
-  const canCreateTests = Boolean(isLoggedIn && (user?.role_id === 1 || user?.role_id === 2));
+  const {
+    attempts,
+    isLoading: attemptsLoading,
+    error: attemptsError,
+    refetch: refetchAttempts,
+  } = useRecentAttempts({ authFetch, language, isAuthenticated });
+  const canCreateTests = Boolean(isAuthenticated && (user?.role_id === 1 || user?.role_id === 2));
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [categoryInput, setCategoryInput] = useState('');
   const [isCategoryListOpen, setIsCategoryListOpen] = useState(false);
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');
 
-  const closeCategoryDropdown = () => {
+  const closeCategoryDropdown = useCallback(() => {
     setIsCategoryListOpen(false);
     Keyboard.dismiss();
-  };
+  }, []);
 
   const categories = useMemo(() => {
     const values = Array.from(new Set((tests || []).map((item) => item?.category).filter(Boolean)));
@@ -78,7 +93,6 @@ export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTes
     if (!normalizedCategoryInput) {
       return categories;
     }
-
     return categories.filter((category) => category.toLowerCase().includes(normalizedCategoryInput));
   }, [categories, normalizedCategoryInput]);
 
@@ -100,9 +114,33 @@ export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTes
       setSelectedCategory(category);
       setCategoryInput(category);
     }
-
     setIsCategoryListOpen(false);
   };
+
+  const handleOpenTestDetails = useCallback((test) => {
+    navigation.navigate('TestDetails', { testId: test?.id });
+  }, [navigation]);
+
+  const handleRefresh = useCallback(() => {
+    refetch();
+    refetchAttempts();
+  }, [refetch, refetchAttempts]);
+
+  const keyExtractor = useCallback((item) => String(item.id), []);
+
+  const renderTestCard = useCallback(({ item }) => {
+    return (
+      <TestCard
+        test={item}
+        difficultyKey={item._difficultyKey}
+        startingTestId={startingTestId}
+        onStart={handleStartTest}
+        onOpenDetails={handleOpenTestDetails}
+        isFavorite={isFavorite(item.id)}
+        onToggleFavorite={toggleFavorite}
+      />
+    );
+  }, [startingTestId, handleStartTest, handleOpenTestDetails, isFavorite, toggleFavorite]);
 
   if (loading) {
     return (
@@ -112,19 +150,6 @@ export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTes
       </View>
     );
   }
-
-  const renderTestCard = ({ item }) => {
-    const difficultyKey = item?._difficultyKey || getDifficultyKey(item);
-    return (
-      <TestCard
-        test={item}
-        difficultyKey={difficultyKey}
-        isStarting={Boolean(startingTestId) && String(startingTestId) === String(item?.id)}
-        onStart={() => onStartTest(item)}
-        onOpenDetails={() => onOpenTestDetails(item)}
-      />
-    );
-  };
 
   return (
     <View className="flex-1 bg-transparent">
@@ -138,39 +163,50 @@ export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTes
       <SafeAreaView className="flex-1 px-6" edges={['top', 'left', 'right']}>
         <StatusBar style="light" />
 
-          <FlatList
-            data={filteredTests}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={renderTestCard}
-            showsVerticalScrollIndicator={false}
-            keyboardDismissMode="on-drag"
-            keyboardShouldPersistTaps="handled"
-            onScrollBeginDrag={closeCategoryDropdown}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={refetch}
-                tintColor="#575ddb"
-                colors={['#575ddb']}
-              />
-            }
+        <FlatList
+          data={filteredTests}
+          keyExtractor={keyExtractor}
+          renderItem={renderTestCard}
+          showsVerticalScrollIndicator={false}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={closeCategoryDropdown}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#575ddb"
+              colors={['#575ddb']}
+            />
+          }
           ListHeaderComponent={
             <>
-              <View className="mt-8 mb-8 w-full bg-mf-secondary/10 rounded-2xl p-5 border border-mf-secondary/20 shadow-xl">
-                <Text className="text-mf-text text-center text-base italic font-solway">
-                  "{data?.dailyQuote}"
-                </Text>
-              </View>
+              <GlassCard style={{ marginTop: 32, marginBottom: 24 }}>
+                <View className="p-5">
+                  <Text className="text-mf-text text-center text-base italic font-solway">
+                    "{data?.dailyQuote}"
+                  </Text>
+                </View>
+              </GlassCard>
+
+              {isAuthenticated ? (
+                <RecentAttemptsWidget
+                  attempts={attempts}
+                  isLoading={attemptsLoading}
+                  error={attemptsError}
+                  onStart={handleStartTest}
+                />
+              ) : null}
 
               <Text className="text-mf-text text-xl font-solway-bold mb-2">{t('home.availableTests')}</Text>
 
               {canCreateTests ? (
-                <TouchableOpacity
+                <Pressable
                   className="mb-4 self-start px-4 py-3 rounded-2xl border border-mf-primary/30 bg-mf-primary/10"
-                  onPress={onGoCreateTest}
+                  onPress={() => navigation.navigate('CreateTest')}
                 >
                   <Text className="text-mf-text font-solway-extrabold text-xs uppercase tracking-widest">{t('home.newTest')}</Text>
-                </TouchableOpacity>
+                </Pressable>
               ) : null}
 
               <View className="mb-5">
@@ -194,19 +230,19 @@ export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTes
                 </View>
                 {isCategoryListOpen ? (
                   <View style={{ zIndex: 20, elevation: 20 }} className="mt-2 rounded-xl border border-mf-secondary/30 bg-mf-bg/95 p-2 max-h-44">
-                    <TouchableOpacity
+                    <Pressable
                       className={`mb-2 px-3 py-2 rounded-lg border ${selectedCategory === 'all' && !normalizedCategoryInput ? 'bg-mf-primary border-mf-primary' : 'bg-mf-secondary/10 border-mf-secondary/30'}`}
                       onPress={() => handleCategoryPick('all')}
                     >
                       <Text className={`font-solway-bold text-xs uppercase tracking-wider ${selectedCategory === 'all' && !normalizedCategoryInput ? 'text-mf-text' : 'text-mf-secondary'}`}>
                         {t('home.all')}
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
 
                     <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
                       {matchingCategories.length > 0 ? (
                         matchingCategories.map((category) => (
-                          <TouchableOpacity
+                          <Pressable
                             key={category}
                             className={`mb-2 px-3 py-2 rounded-lg border ${selectedCategory === category ? 'bg-mf-primary border-mf-primary' : 'bg-mf-secondary/10 border-mf-secondary/30'}`}
                             onPress={() => handleCategoryPick(category)}
@@ -214,7 +250,7 @@ export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTes
                             <Text className={`font-solway-bold text-xs uppercase tracking-wider ${selectedCategory === category ? 'text-mf-text' : 'text-mf-secondary'}`}>
                               {category}
                             </Text>
-                          </TouchableOpacity>
+                          </Pressable>
                         ))
                       ) : (
                         <Text className="text-mf-secondary font-solway text-sm px-2 py-2">{t('home.noCategoryMatches')}</Text>
@@ -227,25 +263,25 @@ export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTes
               <View className="mb-5">
                 <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mb-2">{t('home.difficultyFilter')}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 8 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-                  <TouchableOpacity
+                  <Pressable
                     className={`mr-2 px-3 py-2 rounded-lg border ${selectedDifficulty === 'all' ? 'bg-mf-primary border-mf-primary' : 'bg-mf-secondary/10 border-mf-secondary/30'}`}
                     onPress={() => setSelectedDifficulty('all')}
                   >
                     <Text className={`font-solway-bold text-xs uppercase tracking-wider ${selectedDifficulty === 'all' ? 'text-mf-text' : 'text-mf-secondary'}`}>
                       {t('home.all')}
                     </Text>
-                  </TouchableOpacity>
-                   {difficulties.map((difficultyKey) => (
-                     <TouchableOpacity
-                       key={difficultyKey}
-                       className={`mr-2 px-3 py-2 rounded-lg border ${selectedDifficulty === difficultyKey ? 'bg-mf-primary border-mf-primary' : 'bg-mf-secondary/10 border-mf-secondary/30'}`}
-                       onPress={() => setSelectedDifficulty(difficultyKey)}
-                     >
-                       <Text className={`font-solway-bold text-xs uppercase tracking-wider ${selectedDifficulty === difficultyKey ? 'text-mf-text' : 'text-mf-secondary'}`}>
-                         {t(`difficulty.${difficultyKey}`)}
-                       </Text>
-                     </TouchableOpacity>
-                   ))}
+                  </Pressable>
+                  {difficulties.map((difficultyKey) => (
+                    <Pressable
+                      key={difficultyKey}
+                      className={`mr-2 px-3 py-2 rounded-lg border ${selectedDifficulty === difficultyKey ? 'bg-mf-primary border-mf-primary' : 'bg-mf-secondary/10 border-mf-secondary/30'}`}
+                      onPress={() => setSelectedDifficulty(difficultyKey)}
+                    >
+                      <Text className={`font-solway-bold text-xs uppercase tracking-wider ${selectedDifficulty === difficultyKey ? 'text-mf-text' : 'text-mf-secondary'}`}>
+                        {t(`difficulty.${difficultyKey}`)}
+                      </Text>
+                    </Pressable>
+                  ))}
                 </ScrollView>
               </View>
 
@@ -256,27 +292,12 @@ export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTes
               ) : null}
             </>
           }
-            ListEmptyComponent={
-              <Text className="text-mf-secondary font-solway text-center mt-10">{tests.length > 0 ? t('home.noFilteredTests') : t('home.noTests')}</Text>
-            }
-            contentContainerStyle={{ paddingBottom: 120 }}
-          />
+          ListEmptyComponent={
+            <Text className="text-mf-secondary font-solway text-center mt-10">{tests.length > 0 ? t('home.noFilteredTests') : t('home.noTests')}</Text>
+          }
+          contentContainerStyle={{ paddingBottom: 120 }}
+        />
       </SafeAreaView>
-
-      {isLoggedIn ? (
-        <AppBottomNav
-          active="tests"
-          onTestsPress={onGoTests}
-          onStatsPress={onGoStats}
-          onProfilePress={onGoProfile}
-        />
-      ) : (
-        <AuthBottomNav
-          active="login"
-          onLoginPress={onGoLogin}
-          onRegisterPress={onGoRegister}
-        />
-      )}
     </View>
   );
 }

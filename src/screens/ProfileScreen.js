@@ -1,19 +1,20 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useLanguage } from '../hooks/useLanguage';
 import { useAuth } from '../hooks/useAuth';
-import AppBottomNav from '../components/AppBottomNav';
 import { fetchProfileRequest, updateProfileRequest } from '../services/profileApi';
 import { API_BASE_URL, ApiError } from '../services/httpClient';
+import { GradientButton, OutlineButton } from '../components/MFButton';
+import GlassCard from '../components/GlassCard';
 
-export default function ProfileScreen({ user, onLogout, onGoTests, onGoStats, onGoProfile }) {
+export default function ProfileScreen() {
   const { t, language, setLanguage } = useLanguage();
-  const { authFetch, setUserProfile } = useAuth();
+  const { authFetch, setUserProfile, user, logout } = useAuth();
 
   const [profile, setProfile] = useState(null);
   const [username, setUsername] = useState('');
@@ -265,27 +266,29 @@ export default function ProfileScreen({ user, onLogout, onGoTests, onGoStats, on
             <Text className="text-mf-secondary text-sm font-solway mt-2">{t('profile.subtitle')}</Text>
           </View>
 
-          <View className="mt-5 rounded-2xl border border-mf-secondary/25 bg-mf-secondary/10 p-3">
-            <Text className="text-mf-secondary text-sm font-solway-bold mb-2">{t('profile.appLanguage')}</Text>
-            <View className="w-full rounded-xl border border-mf-secondary/25 bg-mf-bg/70 p-1.5 flex-row">
-              <TouchableOpacity
-                className={`flex-1 rounded-lg py-2.5 items-center ${language === 'en' ? 'bg-mf-primary' : 'bg-transparent'}`}
-                onPress={() => setLanguage('en')}
-              >
-                <Text className={`font-solway-bold text-sm ${language === 'en' ? 'text-mf-text' : 'text-mf-secondary'}`}>
-                  {t('common.english')}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className={`flex-1 rounded-lg py-2.5 items-center ${language === 'hu' ? 'bg-mf-primary' : 'bg-transparent'}`}
-                onPress={() => setLanguage('hu')}
-              >
-                <Text className={`font-solway-bold text-sm ${language === 'hu' ? 'text-mf-text' : 'text-mf-secondary'}`}>
-                  {t('common.hungarian')}
-                </Text>
-              </TouchableOpacity>
+          <GlassCard style={{ marginTop: 20 }}>
+            <View className="p-3">
+              <Text className="text-mf-secondary text-sm font-solway-bold mb-2">{t('profile.appLanguage')}</Text>
+              <View className="w-full rounded-xl border border-mf-secondary/25 bg-mf-bg/70 p-1.5 flex-row">
+                <Pressable
+                  className={`flex-1 rounded-lg py-2.5 items-center ${language === 'en' ? 'bg-mf-primary' : 'bg-transparent'}`}
+                  onPress={() => setLanguage('en')}
+                >
+                  <Text className={`font-solway-bold text-sm ${language === 'en' ? 'text-mf-text' : 'text-mf-secondary'}`}>
+                    {t('common.english')}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  className={`flex-1 rounded-lg py-2.5 items-center ${language === 'hu' ? 'bg-mf-primary' : 'bg-transparent'}`}
+                  onPress={() => setLanguage('hu')}
+                >
+                  <Text className={`font-solway-bold text-sm ${language === 'hu' ? 'text-mf-text' : 'text-mf-secondary'}`}>
+                    {t('common.hungarian')}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
-          </View>
+          </GlassCard>
 
           <View className="mt-8 items-center">
             {resolvedAvatarUrl ? (
@@ -299,75 +302,64 @@ export default function ProfileScreen({ user, onLogout, onGoTests, onGoStats, on
                 <Text className="text-mf-text text-3xl font-solway-bold">{initials}</Text>
               </View>
             )}
-            <TouchableOpacity
+            <Pressable
               className="mt-4 px-4 py-2 rounded-lg border border-mf-secondary/30 bg-mf-secondary/10"
               onPress={handlePickAvatar}
             >
               <Text className="text-mf-secondary font-solway-bold text-xs uppercase tracking-widest">{t('profile.changeAvatar')}</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
-          <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5">
-            <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mb-2">{t('profile.username')}</Text>
-            <TextInput
-              className="w-full bg-mf-bg/60 text-mf-text p-3 rounded-xl border border-mf-secondary/25 font-solway"
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-            />
+          <GlassCard style={{ marginTop: 24 }}>
+            <View className="p-5">
+              <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mb-2">{t('profile.username')}</Text>
+              <TextInput
+                className="w-full bg-mf-bg/60 text-mf-text p-3 rounded-xl border border-mf-secondary/25 font-solway"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+              />
 
-            <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mt-4 mb-2">{t('profile.email')}</Text>
-            <TextInput
-              className="w-full bg-mf-bg/50 text-mf-secondary p-3 rounded-xl border border-mf-secondary/20 font-solway"
-              value={profile?.email || t('profile.notAvailable')}
-              editable={false}
-            />
-            <Text className="text-mf-secondary text-xs font-solway mt-2">{t('profile.emailReadonly')}</Text>
+              <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mt-4 mb-2">{t('profile.email')}</Text>
+              <TextInput
+                className="w-full bg-mf-bg/50 text-mf-secondary p-3 rounded-xl border border-mf-secondary/20 font-solway"
+                value={profile?.email || t('profile.notAvailable')}
+                editable={false}
+              />
+              <Text className="text-mf-secondary text-xs font-solway mt-2">{t('profile.emailReadonly')}</Text>
 
-            <View className="mt-4 flex-row justify-between">
-              <View>
-                <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('profile.joined')}</Text>
-                <Text className="text-mf-text font-solway mt-1">{formatDateValue(profile?.created_at)}</Text>
+              <View className="mt-4 flex-row justify-between">
+                <View>
+                  <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('profile.joined')}</Text>
+                  <Text className="text-mf-text font-solway mt-1">{formatDateValue(profile?.created_at)}</Text>
+                </View>
+              </View>
+
+              <View className="mt-4">
+                <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('profile.role')}</Text>
+                <Text className="text-mf-text font-solway mt-1">{profile?.role_name || t('profile.notAvailable')}</Text>
               </View>
             </View>
-
-            <View className="mt-4">
-              <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('profile.role')}</Text>
-              <Text className="text-mf-text font-solway mt-1">{profile?.role_name || t('profile.notAvailable')}</Text>
-            </View>
-
-          </View>
+          </GlassCard>
 
           {error ? <Text className="text-red-300 font-solway text-sm mt-4">{error}</Text> : null}
           {success ? <Text className="text-green-300 font-solway text-sm mt-4">{success}</Text> : null}
 
-          <TouchableOpacity
-            className="mt-6 bg-mf-primary py-4 rounded-xl items-center shadow-lg shadow-mf-primary/30 active:bg-mf-primary/80"
+          <GradientButton
             onPress={handleSave}
+            loading={isSaving}
             disabled={isSaving}
-          >
-            {isSaving ? (
-              <ActivityIndicator size="small" color="#eae9fc" />
-            ) : (
-              <Text className="text-mf-text font-solway-bold text-lg">{t('profile.saveChanges')}</Text>
-            )}
-          </TouchableOpacity>
+            label={t('profile.saveChanges')}
+            style={{ marginTop: 24 }}
+          />
 
-          <TouchableOpacity
-            className="mt-3 bg-mf-secondary/10 py-4 rounded-xl items-center border border-mf-secondary/20 active:bg-mf-secondary/20"
-            onPress={onLogout}
-          >
-            <Text className="text-mf-secondary font-solway-bold text-lg">{t('common.logout')}</Text>
-          </TouchableOpacity>
+          <OutlineButton
+            onPress={logout}
+            label={t('common.logout')}
+            style={{ marginTop: 12 }}
+          />
         </ScrollView>
       </SafeAreaView>
-
-      <AppBottomNav
-        active="profile"
-        onTestsPress={onGoTests}
-        onStatsPress={onGoStats}
-        onProfilePress={onGoProfile}
-      />
     </View>
   );
 }

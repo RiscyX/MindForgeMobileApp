@@ -1,12 +1,20 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { fetchTestDetails } from '../services/api';
 import { useLanguage } from '../hooks/useLanguage';
+import { useTestActions } from '../context/TestActionsContext';
+import { GradientButton } from '../components/MFButton';
+import GlassCard from '../components/GlassCard';
 
-export default function TestDetailsScreen({ testId, onBack, onStart }) {
+export default function TestDetailsScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { testId } = route.params;
   const { language, t } = useLanguage();
+  const { handleStartTest } = useTestActions();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [test, setTest] = useState(null);
@@ -31,10 +39,12 @@ export default function TestDetailsScreen({ testId, onBack, onStart }) {
   const questions = useMemo(() => Array.isArray(test?.questions) ? test.questions : [], [test]);
 
   const renderQuestion = ({ item, index }) => (
-    <View className="mb-3 rounded-2xl border border-mf-secondary/20 bg-mf-bg/40 p-4">
-      <Text className="text-mf-secondary font-solway text-xs">#{index + 1}</Text>
-      <Text className="text-mf-text font-solway-bold mt-1">{item?.content || ''}</Text>
-    </View>
+    <GlassCard style={{ marginBottom: 12 }}>
+      <View className="p-4">
+        <Text className="text-mf-secondary font-solway text-xs">#{index + 1}</Text>
+        <Text className="text-mf-text font-solway-bold mt-1">{item?.content || ''}</Text>
+      </View>
+    </GlassCard>
   );
 
   if (isLoading) {
@@ -55,12 +65,12 @@ export default function TestDetailsScreen({ testId, onBack, onStart }) {
         <StatusBar style="light" />
 
         <View className="mt-3 flex-row items-center">
-          <TouchableOpacity
+          <Pressable
             className="w-11 h-11 rounded-xl border border-mf-secondary/25 bg-mf-secondary/10 items-center justify-center"
-            onPress={onBack}
+            onPress={() => navigation.goBack()}
           >
             <Text className="text-mf-text font-solway-bold text-lg">&lt;</Text>
-          </TouchableOpacity>
+          </Pressable>
           <View className="flex-1 items-center">
             <Text className="text-mf-text font-solway-extrabold text-base tracking-widest">{t('home.openDetails')}</Text>
           </View>
@@ -70,12 +80,12 @@ export default function TestDetailsScreen({ testId, onBack, onStart }) {
         {error ? (
           <View className="mt-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-5">
             <Text className="text-red-300 font-solway-bold text-base">{error}</Text>
-            <TouchableOpacity
+            <Pressable
               className="mt-3 bg-mf-primary py-3 rounded-xl items-center"
               onPress={load}
             >
               <Text className="text-mf-text font-solway-bold text-sm uppercase tracking-widest">{t('stats.refresh')}</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         ) : null}
 
@@ -94,21 +104,22 @@ export default function TestDetailsScreen({ testId, onBack, onStart }) {
                 ) : null}
               </View>
 
-              <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5">
-                <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('testDetails.questions')}</Text>
-                <Text className="text-mf-text font-solway mt-2">{t('testDetails.count', { count: questions.length })}</Text>
-              </View>
+              <GlassCard style={{ marginTop: 24 }}>
+                <View className="p-5">
+                  <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold">{t('testDetails.questions')}</Text>
+                  <Text className="text-mf-text font-solway mt-2">{t('testDetails.count', { count: questions.length })}</Text>
+                </View>
+              </GlassCard>
 
               <View className="mt-6" />
             </>
           }
           ListFooterComponent={
-            <TouchableOpacity
-              className="mt-3 bg-mf-primary py-4 rounded-2xl items-center border border-white/10 shadow-lg shadow-mf-primary/30"
-              onPress={onStart}
-            >
-              <Text className="text-mf-text font-solway-bold text-base uppercase tracking-widest">{t('home.startTest')}</Text>
-            </TouchableOpacity>
+            <GradientButton
+              onPress={() => handleStartTest({ id: testId })}
+              label={t('home.startTest')}
+              style={{ marginTop: 12 }}
+            />
           }
           contentContainerStyle={{ paddingBottom: 24 }}
         />
