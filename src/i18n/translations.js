@@ -181,6 +181,7 @@ export const translations = {
       results: 'Practice Results',
       runningScore: 'Score: {{correct}}/{{total}}',
       loadingNext: 'Loading next test...',
+      questionNumber: 'Question #{{number}}',
     },
     profile: {
       title: 'Profile',
@@ -411,6 +412,7 @@ export const translations = {
       results: 'Gyakorlás eredménye',
       runningScore: 'Pontszám: {{correct}}/{{total}}',
       loadingNext: 'Következő teszt betöltése...',
+      questionNumber: '{{number}}. kérdés',
     },
     profile: {
       title: 'Profil',
