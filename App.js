@@ -9,6 +9,7 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import TestScreen from './src/screens/TestScreen';
 import TestDetailsScreen from './src/screens/TestDetailsScreen';
 import CreateTestScreen from './src/screens/CreateTestScreen';
+import PracticeSelectScreen from './src/screens/PracticeSelectScreen';
 import AppBackground from './src/components/AppBackground';
 import {
   useFonts,
@@ -32,7 +33,7 @@ function AppContent() {
   const [activeAttemptId, setActiveAttemptId] = useState(null);
   const [startingTestId, setStartingTestId] = useState(null);
 
-  const handleStartTest = async (test) => {
+  const handleStartTest = async (test, { practice = false } = {}) => {
     if (startingTestId) {
       return;
     }
@@ -74,7 +75,7 @@ function AppContent() {
 
       setActiveTestId(testId);
       setActiveAttemptId(attempt.id);
-      setCurrentScreen('Test');
+      setCurrentScreen(practice ? 'PracticeTest' : 'Test');
     } catch (e) {
       console.warn('Start test failed:', e);
       console.log('[StartTest] status=', e?.status);
@@ -170,6 +171,18 @@ function AppContent() {
     setCurrentScreen('Home');
   };
 
+  const handleExitPractice = () => {
+    setActiveTestId(null);
+    setActiveAttemptId(null);
+    setCurrentScreen('Practice');
+  };
+
+  const handleGoToPractice = () => {
+    setCurrentScreen('Practice');
+  };
+
+  const handleStartPractice = (test) => handleStartTest(test, { practice: true });
+
   const handleGoToLogin = () => {
     setCurrentScreen('Login');
   };
@@ -209,6 +222,8 @@ function AppContent() {
     || currentScreen === 'Test'
     || currentScreen === 'TestDetails'
     || currentScreen === 'CreateTest'
+    || currentScreen === 'Practice'
+    || currentScreen === 'PracticeTest'
   )
     ? 'Login'
     : currentScreen;
@@ -239,6 +254,7 @@ function AppContent() {
       content = (
         <StatsScreen
           onGoTests={handleGoToTests}
+          onGoPractice={handleGoToPractice}
           onGoStats={handleGoToStats}
           onGoProfile={handleGoToProfile}
         />
@@ -250,6 +266,7 @@ function AppContent() {
           user={user}
           onLogout={handleLogout}
           onGoTests={handleGoToTests}
+          onGoPractice={handleGoToPractice}
           onGoStats={handleGoToStats}
           onGoProfile={handleGoToProfile}
         />
@@ -285,6 +302,28 @@ function AppContent() {
         />
       );
       break;
+    case 'Practice':
+      content = (
+        <PracticeSelectScreen
+          onStart={handleStartPractice}
+          startingTestId={startingTestId}
+          onGoTests={handleGoToTests}
+          onGoPractice={handleGoToPractice}
+          onGoStats={handleGoToStats}
+          onGoProfile={handleGoToProfile}
+        />
+      );
+      break;
+    case 'PracticeTest':
+      content = (
+        <TestScreen
+          attemptId={activeAttemptId}
+          testId={activeTestId}
+          isPractice={true}
+          onExit={handleExitPractice}
+        />
+      );
+      break;
     case 'Home':
     default:
       content = (
@@ -298,6 +337,7 @@ function AppContent() {
           onGoLogin={handleGoToLogin}
           onGoRegister={handleGoToRegister}
           onGoTests={handleGoToTests}
+          onGoPractice={handleGoToPractice}
           onGoStats={handleGoToStats}
           onGoProfile={handleGoToProfile}
         />
