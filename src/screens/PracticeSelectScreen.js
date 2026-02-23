@@ -1,22 +1,21 @@
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Text, View, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useHomeData } from '../hooks/useHomeData';
 import { useLanguage } from '../hooks/useLanguage';
-import AppBottomNav from '../components/AppBottomNav';
+import { useTestActions } from '../context/TestActionsContext';
 
 export default function PracticeSelectScreen({
   onStart,
   startingTestId,
-  onGoTests,
-  onGoPractice,
-  onGoStats,
-  onGoProfile,
 }) {
   const { language, t } = useLanguage();
+  const { startingTestId: contextStartingTestId, handleStartPractice } = useTestActions();
   const { tests, loading, refreshing, error, refetch } = useHomeData({ language });
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const resolvedStartingTestId = startingTestId ?? contextStartingTestId;
+  const startHandler = onStart ?? handleStartPractice;
 
   const categories = useMemo(() => {
     const values = Array.from(new Set((tests || []).map((item) => item?.category).filter(Boolean)));
@@ -28,15 +27,15 @@ export default function PracticeSelectScreen({
     return (tests || []).filter((item) => item?.category === selectedCategory);
   }, [tests, selectedCategory]);
 
-  const handleStart = () => {
+  const handleStart = useCallback(() => {
     if (!selectedCategory) return;
     if (testsInCategory.length === 0) {
       alert(t('practice.noTestsInCategory'));
       return;
     }
     const randomIndex = Math.floor(Math.random() * testsInCategory.length);
-    onStart(testsInCategory[randomIndex], testsInCategory);
-  };
+    startHandler(testsInCategory[randomIndex], testsInCategory);
+  }, [selectedCategory, startHandler, t, testsInCategory]);
 
   if (loading) {
     return (
@@ -46,13 +45,6 @@ export default function PracticeSelectScreen({
           <ActivityIndicator size="large" color="#575ddb" />
           <Text className="text-mf-secondary mt-4 font-solway">{t('common.loading')}</Text>
         </SafeAreaView>
-        <AppBottomNav
-          active="practice"
-          onTestsPress={onGoTests}
-          onPracticePress={onGoPractice}
-          onStatsPress={onGoStats}
-          onProfilePress={onGoProfile}
-        />
       </View>
     );
   }
@@ -136,12 +128,12 @@ export default function PracticeSelectScreen({
             <View className="pb-4">
               <TouchableOpacity
                 className={`py-4 rounded-2xl items-center shadow-xl ${
-                  startingTestId ? 'bg-mf-primary/50' : 'bg-mf-primary'
+                  resolvedStartingTestId ? 'bg-mf-primary/50' : 'bg-mf-primary'
                 }`}
                 onPress={handleStart}
-                disabled={Boolean(startingTestId)}
+                disabled={Boolean(resolvedStartingTestId)}
               >
-                {startingTestId ? (
+                {resolvedStartingTestId ? (
                   <View className="flex-row items-center">
                     <ActivityIndicator size="small" color="#eae9fc" />
                     <Text className="text-mf-text font-solway-bold text-lg ml-2">
@@ -158,14 +150,6 @@ export default function PracticeSelectScreen({
           ) : null}
         </View>
       </SafeAreaView>
-
-      <AppBottomNav
-        active="practice"
-        onTestsPress={onGoTests}
-        onPracticePress={onGoPractice}
-        onStatsPress={onGoStats}
-        onProfilePress={onGoProfile}
-      />
     </View>
   );
 }

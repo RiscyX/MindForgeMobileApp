@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import { useNavigation } from '@react-navigation/native';
 import { useLanguage } from '../hooks/useLanguage';
 import { useAuth } from '../hooks/useAuth';
 import { fetchProfileRequest, updateProfileRequest } from '../services/profileApi';
@@ -13,6 +14,7 @@ import { GradientButton, OutlineButton } from '../components/MFButton';
 import GlassCard from '../components/GlassCard';
 
 export default function ProfileScreen() {
+  const navigation = useNavigation();
   const { t, language, setLanguage } = useLanguage();
   const { authFetch, setUserProfile, user, logout } = useAuth();
 
@@ -132,6 +134,14 @@ export default function ProfileScreen() {
 
     return date.toLocaleString();
   }, [t]);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await logout();
+    } finally {
+      navigation.navigate('Home');
+    }
+  }, [logout, navigation]);
 
   const normalizePickedAssetToFile = useCallback(async (asset) => {
     if (!asset?.uri) {
@@ -354,7 +364,7 @@ export default function ProfileScreen() {
           />
 
           <OutlineButton
-            onPress={logout}
+            onPress={handleLogout}
             label={t('common.logout')}
             style={{ marginTop: 12 }}
           />

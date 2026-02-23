@@ -16,8 +16,9 @@ const generateLocalId = () => `offline_${Date.now()}_${Math.random().toString(36
 export default function TestScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { attemptId, testId, offlineQuestions, offlineTest } = route.params;
+  const { attemptId, testId, offlineQuestions, offlineTest, practiceMode } = route.params || {};
   const isOfflineMode = Boolean(offlineQuestions);
+  const isPracticeMode = Boolean(practiceMode);
   const { language, t } = useLanguage();
   const { authFetch } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
@@ -696,12 +697,14 @@ export default function TestScreen() {
 
           // ── Offline submit ────────────────────────────────────────────────
           if (isOfflineMode) {
-            await appendToSyncQueue({
-              id: generateLocalId(),
-              testId: String(testId),
-              answers: answersPayload,
-              completedAt: new Date().toISOString(),
-            });
+            if (!isPracticeMode) {
+              await appendToSyncQueue({
+                id: generateLocalId(),
+                testId: String(testId),
+                answers: answersPayload,
+                completedAt: new Date().toISOString(),
+              });
+            }
 
             // Compute local score from is_correct flags on cached questions.
             const total = questions.length;
@@ -852,6 +855,10 @@ export default function TestScreen() {
             <Pressable className="mt-6 bg-mf-primary py-4 rounded-xl items-center" onPress={handleReview}>
               <Text className="text-mf-text font-solway-bold text-lg">{t('test.reviewTest')}</Text>
             </Pressable>
+          ) : isPracticeMode ? (
+            <View className="mt-6 rounded-xl border border-mf-secondary/25 bg-mf-secondary/10 px-4 py-3">
+              <Text className="text-mf-secondary font-solway text-sm text-center">{t('test.practiceNoSave')}</Text>
+            </View>
           ) : (
             <View className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
               <Text className="text-amber-300 font-solway text-sm text-center">{t('offline.savedForSync')}</Text>

@@ -54,25 +54,89 @@ const FALLBACK_TESTS = {
 
 const normalizeLanguage = (language) => (language === 'hu' ? 'hu' : 'en');
 
+const resolveTestsArray = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.tests)) return payload.tests;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data?.tests)) return payload.data.tests;
+  if (Array.isArray(payload?.data?.items)) return payload.data.items;
+  return [];
+};
+
+const resolvePagination = (payload, { page, limit, fetchedCount }) => {
+  const pagination = payload?.pagination || payload?.meta?.pagination || payload?.meta || {};
+  const currentPage = Number(
+    pagination.current_page
+    ?? pagination.page
+    ?? page
+  );
+  const totalPages = Number(
+    pagination.total_pages
+    ?? pagination.last_page
+    ?? 0
+  );
+  const nextPageFromPayload = Number(
+    pagination.next_page
+    ?? pagination.nextPage
+    ?? 0
+  );
+
+  if (Number.isFinite(nextPageFromPayload) && nextPageFromPayload > 0) {
+    return { hasMore: true, nextPage: nextPageFromPayload };
+  }
+
+  if (Number.isFinite(totalPages) && totalPages > 0 && Number.isFinite(currentPage)) {
+    const hasMore = currentPage < totalPages;
+    return { hasMore, nextPage: hasMore ? currentPage + 1 : null };
+  }
+
+  if (typeof pagination.has_more === 'boolean') {
+    const nextPage = pagination.has_more ? page + 1 : null;
+    return { hasMore: pagination.has_more, nextPage };
+  }
+
+  if (typeof pagination.hasMore === 'boolean') {
+    const nextPage = pagination.hasMore ? page + 1 : null;
+    return { hasMore: pagination.hasMore, nextPage };
+  }
+
+  const hasMoreByCount = fetchedCount >= limit;
+  return { hasMore: hasMoreByCount, nextPage: hasMoreByCount ? page + 1 : null };
+};
+
 // Tesztek lekérése a backendről
-export const fetchTests = async ({ language = 'en' } = {}) => {
+export const fetchTests = async ({ language = 'en', page = 1, limit = 20 } = {}) => {
   try {
     const lang = normalizeLanguage(language);
-    const data = await apiRequest(`/tests?lang=${lang}`, { method: 'GET' });
-    const tests = Array.isArray(data?.tests) ? data.tests : [];
+    const query = `?lang=${encodeURIComponent(lang)}&page=${encodeURIComponent(String(page))}&limit=${encodeURIComponent(String(limit))}`;
+    const data = await apiRequest(`/tests${query}`, { method: 'GET' });
+    const tests = resolveTestsArray(data);
+    const pagination = resolvePagination(data, { page, limit, fetchedCount: tests.length });
 
     if (tests.length === 0 && __DEV__) {
       console.warn('Tests endpoint returned empty array. Using local fallback tests in development.');
-      return FALLBACK_TESTS[lang];
+      return {
+        tests: page === 1 ? FALLBACK_TESTS[lang] : [],
+        hasMore: false,
+        nextPage: null,
+      };
     }
 
-    return tests;
+    return {
+      tests,
+      hasMore: pagination.hasMore,
+      nextPage: pagination.nextPage,
+    };
   } catch (error) {
     if (__DEV__) {
       console.error('Fetch tests error:', error);
     }
     const lang = normalizeLanguage(language);
-    return __DEV__ ? FALLBACK_TESTS[lang] : [];
+    return {
+      tests: __DEV__ && page === 1 ? FALLBACK_TESTS[lang] : [],
+      hasMore: false,
+      nextPage: null,
+    };
   }
 };
 

@@ -22,7 +22,7 @@ export default function HomeScreen() {
   const { user, isAuthenticated, authFetch } = useAuth();
   const { startingTestId, handleStartTest } = useTestActions();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const { data, tests, loading, refreshing, error, refetch } = useHomeData({ language });
+  const { data, tests, loading, loadingMore, refreshing, error, refetch, hasMoreTests, loadMore } = useHomeData({ language });
   const {
     attempts,
     isLoading: attemptsLoading,
@@ -125,6 +125,15 @@ export default function HomeScreen() {
     refetch();
     refetchAttempts();
   }, [refetch, refetchAttempts]);
+
+  const renderListFooter = useCallback(() => {
+    if (!loadingMore) return null;
+    return (
+      <View className="py-4 items-center">
+        <ActivityIndicator size="small" color="#575ddb" />
+      </View>
+    );
+  }, [loadingMore]);
 
   const keyExtractor = useCallback((item) => String(item.id), []);
 
@@ -295,6 +304,13 @@ export default function HomeScreen() {
           ListEmptyComponent={
             <Text className="text-mf-secondary font-solway text-center mt-10">{tests.length > 0 ? t('home.noFilteredTests') : t('home.noTests')}</Text>
           }
+          ListFooterComponent={renderListFooter}
+          onEndReachedThreshold={0.5}
+          onEndReached={() => {
+            if (hasMoreTests) {
+              loadMore();
+            }
+          }}
           contentContainerStyle={{ paddingBottom: 120 }}
         />
       </SafeAreaView>

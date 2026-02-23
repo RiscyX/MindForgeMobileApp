@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../hooks/useLanguage';
 import { startAttemptRequest } from '../services/attemptsApi';
+import { fetchTestDetails } from '../services/api';
 import { getOnlineStatus } from '../services/networkStatus';
 import { useOfflineCache } from './OfflineCacheContext';
 
@@ -123,8 +124,64 @@ export function TestActionsProvider({ children }) {
     }
   }, [startingTestId, isAuthenticated, authFetch, logout, language, navigation, getCachedTest]);
 
+  const handleStartPractice = useCallback(async (test) => {
+    if (startingTestId) {
+      return;
+    }
+
+    const testId = test?.id;
+    if (!testId) {
+      return;
+    }
+
+    if (!getOnlineStatus()) {
+      const cached = getCachedTest(testId);
+      if (!cached || !Array.isArray(cached.questions) || cached.questions.length === 0) {
+        Alert.alert(
+          'Offline',
+          'This test is not available offline. Connect to the internet and open the app to cache your favorites.',
+        );
+        return;
+      }
+
+      navigation.navigate('Test', {
+        testId,
+        attemptId: null,
+        offlineQuestions: cached.questions,
+        offlineTest: cached,
+        practiceMode: true,
+      });
+      return;
+    }
+
+    try {
+      setStartingTestId(testId);
+      const testDetails = await fetchTestDetails({ testId, language });
+      const questions = Array.isArray(testDetails?.questions) ? testDetails.questions : [];
+
+      if (questions.length === 0) {
+        Alert.alert('Practice', 'This practice test has no available questions.');
+        return;
+      }
+
+      navigation.navigate('Test', {
+        testId,
+        attemptId: null,
+        offlineQuestions: questions,
+        offlineTest: testDetails,
+        practiceMode: true,
+      });
+    } catch (e) {
+      const apiMessage = e?.data?.error?.message || e?.data?.message;
+      const message = apiMessage || e?.message || 'Failed to start practice.';
+      alert(message);
+    } finally {
+      setStartingTestId(null);
+    }
+  }, [startingTestId, getCachedTest, navigation, language]);
+
   return (
-    <TestActionsContext.Provider value={{ startingTestId, handleStartTest }}>
+    <TestActionsContext.Provider value={{ startingTestId, handleStartTest, handleStartPractice }}>
       {children}
     </TestActionsContext.Provider>
   );

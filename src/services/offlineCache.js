@@ -1,36 +1,35 @@
-import * as FileSystem from 'expo-file-system';
+import { File, Directory, Paths } from 'expo-file-system';
 
-const CACHE_DIR = `${FileSystem.documentDirectory}mf_cache/`;
-const SNAPSHOT_PATH = `${CACHE_DIR}favorites_snapshot.json`;
-const SYNC_QUEUE_PATH = `${CACHE_DIR}sync_queue.json`;
+// ─── path helpers ──────────────────────────────────────────────────────────────
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+const getCacheDir = () => new Directory(Paths.document, 'mf_cache');
+const getSnapshotFile = () => new File(Paths.document, 'mf_cache', 'favorites_snapshot.json');
+const getSyncQueueFile = () => new File(Paths.document, 'mf_cache', 'sync_queue.json');
 
-const ensureDir = async () => {
-  const info = await FileSystem.getInfoAsync(CACHE_DIR);
-  if (!info.exists) {
-    await FileSystem.makeDirectoryAsync(CACHE_DIR, { intermediates: true });
+// ─── internal helpers ──────────────────────────────────────────────────────────
+
+const ensureDir = () => {
+  const dir = getCacheDir();
+  if (!dir.exists) {
+    dir.create({ intermediates: true });
   }
 };
 
-const readJson = async (path) => {
+const readJson = async (getFile) => {
   try {
-    const info = await FileSystem.getInfoAsync(path);
-    if (!info.exists) {
-      return null;
-    }
-    const text = await FileSystem.readAsStringAsync(path, { encoding: FileSystem.EncodingType.UTF8 });
+    const file = getFile();
+    if (!file.exists) return null;
+    const text = await file.text();
     return JSON.parse(text);
   } catch {
     return null;
   }
 };
 
-const writeJson = async (path, data) => {
-  await ensureDir();
-  await FileSystem.writeAsStringAsync(path, JSON.stringify(data), {
-    encoding: FileSystem.EncodingType.UTF8,
-  });
+const writeJson = (getFile, data) => {
+  ensureDir();
+  const file = getFile();
+  file.write(JSON.stringify(data));
 };
 
 // ─── favorites snapshot ───────────────────────────────────────────────────────
@@ -38,24 +37,22 @@ const writeJson = async (path, data) => {
 /**
  * Returns { cachedAt, tests } or null if no snapshot exists.
  */
-export const loadFavoritesSnapshot = () => readJson(SNAPSHOT_PATH);
+export const loadFavoritesSnapshot = () => readJson(getSnapshotFile);
 
 /**
  * Saves an array of fully-hydrated test objects (including questions).
  */
 export const saveFavoritesSnapshot = async (tests) => {
-  await writeJson(SNAPSHOT_PATH, {
+  writeJson(getSnapshotFile, {
     cachedAt: new Date().toISOString(),
     tests: Array.isArray(tests) ? tests : [],
   });
 };
 
-export const clearFavoritesSnapshot = async () => {
+export const clearFavoritesSnapshot = () => {
   try {
-    const info = await FileSystem.getInfoAsync(SNAPSHOT_PATH);
-    if (info.exists) {
-      await FileSystem.deleteAsync(SNAPSHOT_PATH, { idempotent: true });
-    }
+    const file = getSnapshotFile();
+    if (file.exists) file.delete();
   } catch {
     // Ignore.
   }
@@ -67,7 +64,7 @@ export const clearFavoritesSnapshot = async () => {
  * Returns the current sync queue array (may be empty).
  */
 export const loadSyncQueue = async () => {
-  const data = await readJson(SYNC_QUEUE_PATH);
+  const data = await readJson(getSyncQueueFile);
   return Array.isArray(data) ? data : [];
 };
 
@@ -78,7 +75,7 @@ export const loadSyncQueue = async () => {
 export const appendToSyncQueue = async (item) => {
   const queue = await loadSyncQueue();
   queue.push({ ...item, synced: false });
-  await writeJson(SYNC_QUEUE_PATH, queue);
+  writeJson(getSyncQueueFile, queue);
 };
 
 /**
@@ -89,7 +86,7 @@ export const markSynced = async (localId) => {
   const next = queue.map((item) =>
     item.id === localId ? { ...item, synced: true } : item
   );
-  await writeJson(SYNC_QUEUE_PATH, next);
+  writeJson(getSyncQueueFile, next);
 };
 
 /**
@@ -98,5 +95,5 @@ export const markSynced = async (localId) => {
 export const removeSynced = async () => {
   const queue = await loadSyncQueue();
   const next = queue.filter((item) => !item.synced);
-  await writeJson(SYNC_QUEUE_PATH, next);
+  writeJson(getSyncQueueFile, next);
 };
