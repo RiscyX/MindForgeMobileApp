@@ -11,7 +11,7 @@ import TestCard from '../components/TestCard';
 
 cssInterop(SafeAreaView, { className: 'style' });
 
-export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTestId, user, onGoCreateTest, isLoggedIn, onGoLogin, onGoRegister, onGoTests, onGoStats, onGoProfile }) {
+export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTestId, user, onGoCreateTest, isLoggedIn, onGoLogin, onGoRegister, onGoTests, onGoPractice, onGoStats, onGoProfile }) {
   const { language, t } = useLanguage();
   const { data, tests, loading, refreshing, error, refetch } = useHomeData({ language });
   const canCreateTests = Boolean(isLoggedIn && (user?.role_id === 1 || user?.role_id === 2));
@@ -267,6 +267,7 @@ export default function HomeScreen({ onStartTest, onOpenTestDetails, startingTes
         <AppBottomNav
           active="tests"
           onTestsPress={onGoTests}
+          onPracticePress={onGoPractice}
           onStatsPress={onGoStats}
           onProfilePress={onGoProfile}
         />

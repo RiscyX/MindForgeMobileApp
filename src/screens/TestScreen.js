@@ -8,7 +8,16 @@ import { useAuth } from '../hooks/useAuth';
 import { getAttemptRequest, reviewAttemptRequest, submitAttemptRequest } from '../services/attemptsApi';
 import { useLanguage } from '../hooks/useLanguage';
 
-export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
+const shuffleArray = (arr) => {
+  const shuffled = [...arr];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
+export default function TestScreen({ attemptId, testId, onExit, onRetry, isPractice = false }) {
   const { language, t } = useLanguage();
   const { authFetch } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
@@ -30,6 +39,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
   const [matchingLeftLayouts, setMatchingLeftLayouts] = useState({});
   const [matchingRightLayouts, setMatchingRightLayouts] = useState({});
   const isTransitioningRef = useRef(false);
+  const practiceSubmitRef = useRef(null);
 
   const [attemptSummary, setAttemptSummary] = useState(null);
   const [questions, setQuestions] = useState([]);
@@ -67,6 +77,18 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
       return;
     }
 
+    if (isPractice) {
+      Alert.alert(
+        t('practice.exitTitle'),
+        t('practice.exitMessage'),
+        [
+          { text: t('practice.exitStay'), style: 'cancel' },
+          { text: t('practice.exitConfirm'), style: 'destructive', onPress: () => practiceSubmitRef.current?.() },
+        ]
+      );
+      return;
+    }
+
     Alert.alert(
       t('test.exitConfirmTitle'),
       t('test.exitConfirmMessage'),
@@ -75,7 +97,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
         { text: t('test.exitConfirmLeave'), style: 'destructive', onPress: onExit },
       ]
     );
-  }, [animOpacity, animTranslate, answersByQuestionId, mode, onExit, t]);
+  }, [animOpacity, animTranslate, answersByQuestionId, isPractice, mode, onExit, t]);
 
   const Header = ({ title, rightContent }) => (
     <View className="mt-3 flex-row items-center justify-between">
@@ -115,7 +137,8 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
         const payload = await getAttemptRequest({ authFetch, attemptId, language });
         setAttemptSummary(payload?.attempt || null);
         setTest(payload?.test || null);
-        setQuestions(Array.isArray(payload?.questions) ? payload.questions : []);
+        const rawQuestions = Array.isArray(payload?.questions) ? payload.questions : [];
+        setQuestions(isPractice ? shuffleArray(rawQuestions) : rawQuestions);
         setReviewQuestions(null);
         setStep(0);
         setMode('quiz');
@@ -239,6 +262,38 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
       return acc;
     }, {});
   }, []);
+
+  // Keep practice-mode submit handler current for the exit-press ref.
+  if (isPractice) {
+    practiceSubmitRef.current = async () => {
+      if (isSubmittingRef.current) return;
+      isSubmittingRef.current = true;
+      setIsSubmitting(true);
+      try {
+        const answersPayload = {};
+        for (const q of questions) {
+          const v = answersByQuestionId[q.id];
+          if (!v) continue;
+          if (v.answer_id) {
+            answersPayload[q.id] = { answer_id: v.answer_id };
+          } else if (v.pairs && typeof v.pairs === 'object') {
+            answersPayload[q.id] = { pairs: normalizePairs(v.pairs) };
+          } else if (typeof v.text === 'string' && v.text.trim() !== '') {
+            answersPayload[q.id] = { text: v.text.trim() };
+          }
+        }
+        const submit = await submitAttemptRequest({ authFetch, attemptId, answers: answersPayload });
+        setAttemptSummary(submit?.attempt || attemptSummary);
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        transitionMode('results');
+      } catch (e) {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        setMode('results');
+      }
+    };
+  }
 
   const matchingModel = useMemo(() => {
     if (!isMatchingQuestion || !currentQuestion) {
@@ -784,7 +839,7 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
       <View className="flex-1 bg-transparent">
         <SafeAreaView className="flex-1 px-6" edges={['top', 'left', 'right']}>
           <StatusBar style="light" />
-          <Header title={t('test.results')} />
+          <Header title={isPractice ? t('practice.results') : t('test.results')} />
           <View className="mt-8">
             <Text className="text-mf-secondary font-solway mt-2">{test?.title || ''}</Text>
           </View>
@@ -796,13 +851,21 @@ export default function TestScreen({ attemptId, testId, onExit, onRetry }) {
             </Text>
           </View>
 
-          <TouchableOpacity className="mt-6 bg-mf-primary py-4 rounded-xl items-center" onPress={handleReview}>
-            <Text className="text-mf-text font-solway-bold text-lg">{t('test.reviewTest')}</Text>
-          </TouchableOpacity>
+          {isPractice ? (
+            <TouchableOpacity className="mt-6 bg-mf-primary py-4 rounded-xl items-center" onPress={onExit}>
+              <Text className="text-mf-text font-solway-bold text-lg">{t('practice.backToPractice')}</Text>
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity className="mt-6 bg-mf-primary py-4 rounded-xl items-center" onPress={handleReview}>
+                <Text className="text-mf-text font-solway-bold text-lg">{t('test.reviewTest')}</Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity className="mt-3 bg-mf-secondary/10 py-4 rounded-xl items-center border border-mf-secondary/20" onPress={handleRetry}>
-            <Text className="text-mf-secondary font-solway-bold text-lg">{t('test.retry')}</Text>
-          </TouchableOpacity>
+              <TouchableOpacity className="mt-3 bg-mf-secondary/10 py-4 rounded-xl items-center border border-mf-secondary/20" onPress={handleRetry}>
+                <Text className="text-mf-secondary font-solway-bold text-lg">{t('test.retry')}</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </SafeAreaView>
       </View>
     );

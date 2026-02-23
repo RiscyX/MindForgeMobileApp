@@ -7,7 +7,7 @@ import { useAuth } from '../hooks/useAuth';
 import AppBottomNav from '../components/AppBottomNav';
 import { fetchQuizStatsRequest } from '../services/statsApi';
 
-export default function StatsScreen({ onGoTests, onGoStats, onGoProfile }) {
+export default function StatsScreen({ onGoTests, onGoPractice, onGoStats, onGoProfile }) {
   const { t, language } = useLanguage();
   const { authFetch } = useAuth();
 
@@ -276,6 +276,7 @@ export default function StatsScreen({ onGoTests, onGoStats, onGoProfile }) {
       <AppBottomNav
         active="stats"
         onTestsPress={onGoTests}
+        onPracticePress={onGoPractice}
         onStatsPress={onGoStats}
         onProfilePress={onGoProfile}
       />

@@ -11,7 +11,7 @@ import AppBottomNav from '../components/AppBottomNav';
 import { fetchProfileRequest, updateProfileRequest } from '../services/profileApi';
 import { API_BASE_URL, ApiError } from '../services/httpClient';
 
-export default function ProfileScreen({ user, onLogout, onGoTests, onGoStats, onGoProfile }) {
+export default function ProfileScreen({ user, onLogout, onGoTests, onGoPractice, onGoStats, onGoProfile }) {
   const { t, language, setLanguage } = useLanguage();
   const { authFetch, setUserProfile } = useAuth();
 
@@ -365,6 +365,7 @@ export default function ProfileScreen({ user, onLogout, onGoTests, onGoStats, on
       <AppBottomNav
         active="profile"
         onTestsPress={onGoTests}
+        onPracticePress={onGoPractice}
         onStatsPress={onGoStats}
         onProfilePress={onGoProfile}
       />
