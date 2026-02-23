@@ -179,6 +179,8 @@ export const translations = {
       exitConfirm: 'Exit & See Results',
       exitStay: 'Continue',
       results: 'Practice Results',
+      runningScore: 'Score: {{correct}}/{{total}}',
+      loadingNext: 'Loading next test...',
     },
     profile: {
       title: 'Profile',
@@ -407,6 +409,8 @@ export const translations = {
       exitConfirm: 'Kilépés és eredmények',
       exitStay: 'Folytatás',
       results: 'Gyakorlás eredménye',
+      runningScore: 'Pontszám: {{correct}}/{{total}}',
+      loadingNext: 'Következő teszt betöltése...',
     },
     profile: {
       title: 'Profil',

@@ -32,6 +32,8 @@ function AppContent() {
   const [activeTestId, setActiveTestId] = useState(null);
   const [activeAttemptId, setActiveAttemptId] = useState(null);
   const [startingTestId, setStartingTestId] = useState(null);
+  const [practiceCategoryTests, setPracticeCategoryTests] = useState([]);
+  const [practiceScore, setPracticeScore] = useState({ correct: 0, total: 0 });
 
   const handleStartTest = async (test, { practice = false } = {}) => {
     if (startingTestId) {
@@ -125,8 +127,13 @@ function AppContent() {
   };
 
   const handleLogin = async ({ email, password }) => {
-    await login({ email, password });
-    setCurrentScreen('Home');
+    try {
+      await login({ email, password });
+      setCurrentScreen('Home');
+    } catch (e) {
+      const msg = e?.data?.error?.message || e?.data?.message || e?.message || t('login.loginFailed');
+      throw new Error(msg);
+    }
   };
 
   const handleRegister = async ({ email, password, passwordConfirm }) => {
@@ -174,6 +181,8 @@ function AppContent() {
   const handleExitPractice = () => {
     setActiveTestId(null);
     setActiveAttemptId(null);
+    setPracticeCategoryTests([]);
+    setPracticeScore({ correct: 0, total: 0 });
     setCurrentScreen('Practice');
   };
 
@@ -181,7 +190,37 @@ function AppContent() {
     setCurrentScreen('Practice');
   };
 
-  const handleStartPractice = (test) => handleStartTest(test, { practice: true });
+  const handleStartPractice = (test, categoryTests) => {
+    setPracticeCategoryTests(categoryTests || []);
+    setPracticeScore({ correct: 0, total: 0 });
+    handleStartTest(test, { practice: true });
+  };
+
+  const handlePracticeNext = async ({ correct, total }) => {
+    setPracticeScore(prev => ({
+      correct: prev.correct + (correct || 0),
+      total: prev.total + (total || 0),
+    }));
+
+    if (practiceCategoryTests.length === 0) {
+      handleExitPractice();
+      return;
+    }
+
+    const randomTest = practiceCategoryTests[Math.floor(Math.random() * practiceCategoryTests.length)];
+    try {
+      const attempt = await startAttemptRequest({ authFetch, testId: randomTest.id, language });
+      if (!attempt?.id) {
+        handleExitPractice();
+        return;
+      }
+      setActiveTestId(randomTest.id);
+      setActiveAttemptId(attempt.id);
+    } catch (e) {
+      console.warn('Practice next failed:', e);
+      handleExitPractice();
+    }
+  };
 
   const handleGoToLogin = () => {
     setCurrentScreen('Login');
@@ -320,6 +359,8 @@ function AppContent() {
           attemptId={activeAttemptId}
           testId={activeTestId}
           isPractice={true}
+          practiceScore={practiceScore}
+          onPracticeNext={handlePracticeNext}
           onExit={handleExitPractice}
         />
       );
