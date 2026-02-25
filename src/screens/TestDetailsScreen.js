@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { fetchTestDetails } from '../services/api';
 import { useLanguage } from '../hooks/useLanguage';
+import { useAuth } from '../hooks/useAuth';
 import { useTestActions } from '../context/TestActionsContext';
 import { GradientButton } from '../components/MFButton';
 import GlassCard from '../components/GlassCard';
@@ -12,8 +13,9 @@ import GlassCard from '../components/GlassCard';
 export default function TestDetailsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { testId } = route.params;
+  const { testId, fromCreate = false } = route.params || {};
   const { language, t } = useLanguage();
+  const { user } = useAuth();
   const { handleStartTest } = useTestActions();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -37,6 +39,8 @@ export default function TestDetailsScreen() {
   }, [load]);
 
   const questions = useMemo(() => Array.isArray(test?.questions) ? test.questions : [], [test]);
+  const roleId = Number(user?.role_id);
+  const canManageTests = roleId === 1 || roleId === 2;
 
   const renderQuestion = ({ item, index }) => (
     <GlassCard style={{ marginBottom: 12 }}>
@@ -115,11 +119,23 @@ export default function TestDetailsScreen() {
             </>
           }
           ListFooterComponent={
-            <GradientButton
-              onPress={() => handleStartTest({ id: testId })}
-              label={t('home.startTest')}
-              style={{ marginTop: 12 }}
-            />
+            <View>
+              <GradientButton
+                onPress={() => handleStartTest({ id: testId })}
+                label={t('home.startTest')}
+                style={{ marginTop: 12 }}
+              />
+              {fromCreate && canManageTests ? (
+                <Pressable
+                  className="mt-3 rounded-xl border border-mf-secondary/25 bg-mf-secondary/10 py-3 items-center"
+                  onPress={() => navigation.navigate('ManageTests')}
+                >
+                  <Text className="text-mf-secondary font-solway-bold text-sm uppercase tracking-widest">
+                    {t('nav.manageTests')}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           }
           contentContainerStyle={{ paddingBottom: 24 }}
         />

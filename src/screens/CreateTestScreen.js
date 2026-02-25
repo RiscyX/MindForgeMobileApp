@@ -558,7 +558,7 @@ export default function CreateTestScreen() {
       if (!testId) {
         throw new Error('Apply succeeded but missing test_id.');
       }
-      navigation.navigate('TestDetails', { testId });
+      navigation.replace('TestDetails', { testId, fromCreate: true });
     } catch (e) {
       const apiCode = e?.data?.error?.code;
       const message = mapApiErrorMessage(e, 'Apply failed.');

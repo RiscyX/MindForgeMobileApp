@@ -6,6 +6,8 @@ import { useNavigation } from '@react-navigation/native';
 import { cssInterop } from 'nativewind';
 import { useLanguage } from '../hooks/useLanguage';
 import { useFavorites } from '../context/FavoritesContext';
+import { useOfflineCache } from '../context/OfflineCacheContext';
+import { useNetworkStatus } from '../context/NetworkContext';
 import { useTestActions } from '../context/TestActionsContext';
 import TestCard from '../components/TestCard';
 import GlassCard from '../components/GlassCard';
@@ -16,7 +18,13 @@ export default function FavoritesScreen() {
   const navigation = useNavigation();
   const { t } = useLanguage();
   const { tests, isLoading, error, reload, isFavorite, toggleFavorite } = useFavorites();
+  const { cachedTests, cachedAt, isLoadingFromDisk } = useOfflineCache();
+  const isOnline = useNetworkStatus();
   const { startingTestId, handleStartTest } = useTestActions();
+
+  // Offline: fall back to the cached snapshot.
+  const displayTests = (!isOnline && tests.length === 0) ? cachedTests : tests;
+  const isOfflineFallback = !isOnline && tests.length === 0 && cachedTests.length > 0;
 
   const handleOpenTestDetails = useCallback(
     (test) => navigation.navigate('TestDetails', { testId: test?.id }),
@@ -66,10 +74,10 @@ export default function FavoritesScreen() {
                 paddingVertical: 4,
                 borderRadius: 999,
                 borderWidth: 1,
-                borderColor: tests.length >= 10
+                borderColor: displayTests.length >= 10
                   ? 'rgba(220,53,69,0.45)'
                   : 'rgba(87,93,219,0.35)',
-                backgroundColor: tests.length >= 10
+                backgroundColor: displayTests.length >= 10
                   ? 'rgba(220,53,69,0.12)'
                   : 'rgba(87,93,219,0.12)',
                 marginLeft: 12,
@@ -79,18 +87,26 @@ export default function FavoritesScreen() {
                 style={{
                   fontSize: 12,
                   fontWeight: '800',
-                  color: tests.length >= 10
+                  color: displayTests.length >= 10
                     ? 'rgba(220,53,69,0.95)'
                     : 'rgba(234,233,252,0.80)',
                 }}
               >
-                {tests.length} / 10
+                {displayTests.length} / 10
               </Text>
             </View>
           </View>
         </View>
 
-        {error ? (
+        {isOfflineFallback && cachedAt ? (
+          <View className="mb-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-2">
+            <Text className="text-yellow-300 font-solway text-xs">
+              {t('offline.cachedData')} {new Date(cachedAt).toLocaleDateString()}
+            </Text>
+          </View>
+        ) : null}
+
+        {error && !isOfflineFallback ? (
           <View className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
             <Text className="text-red-300 font-solway-bold">{error}</Text>
             <Pressable className="mt-3 bg-mf-primary py-3 rounded-xl items-center" onPress={reload}>
@@ -99,12 +115,12 @@ export default function FavoritesScreen() {
           </View>
         ) : null}
 
-        {isLoading ? (
+        {isLoading || isLoadingFromDisk ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color="#575ddb" />
             <Text className="text-mf-secondary font-solway mt-4">{t('common.loading')}</Text>
           </View>
-        ) : tests.length === 0 ? (
+        ) : displayTests.length === 0 ? (
           <GlassCard style={{ marginTop: 24 }}>
             <View className="p-5">
               <Text className="text-mf-secondary font-solway">{t('favorites.noData')}</Text>
@@ -112,7 +128,7 @@ export default function FavoritesScreen() {
           </GlassCard>
         ) : (
           <FlatList
-            data={tests}
+            data={displayTests}
             keyExtractor={keyExtractor}
             renderItem={renderItem}
             showsVerticalScrollIndicator={false}

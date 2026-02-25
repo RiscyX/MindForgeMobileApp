@@ -8,6 +8,7 @@ import {
   removeFavoriteTestRequest,
 } from '../services/favoritesApi';
 import { useOfflineCache } from './OfflineCacheContext';
+import { getOnlineStatus } from '../services/networkStatus';
 
 const FAVORITES_LIMIT = 10;
 
@@ -33,6 +34,12 @@ export function FavoritesProvider({ children }) {
       return;
     }
 
+    // If offline, skip the network request entirely — the screen will fall back
+    // to the cached snapshot from OfflineCacheContext.
+    if (!getOnlineStatus()) {
+      return;
+    }
+
     setIsLoading(true);
     setError('');
     try {
@@ -42,6 +49,11 @@ export function FavoritesProvider({ children }) {
       // Refresh offline cache snapshot in the background (no await).
       refreshSnapshot(result.tests).catch(() => {});
     } catch (e) {
+      // If the request failed because we went offline mid-flight, suppress the
+      // error — the screen will show the cached snapshot instead.
+      if (!getOnlineStatus()) {
+        return;
+      }
       setError(e?.message || 'Could not load favorites.');
     } finally {
       setIsLoading(false);

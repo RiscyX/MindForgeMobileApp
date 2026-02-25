@@ -18,17 +18,22 @@ export function OfflineCacheProvider({ children }) {
   const [cachedTests, setCachedTests] = useState([]);
   const [cachedAt, setCachedAt] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingFromDisk, setIsLoadingFromDisk] = useState(true);
 
   const refreshingRef = useRef(false);
 
   // Load snapshot from disk on mount / auth change.
   useEffect(() => {
     let cancelled = false;
+    setIsLoadingFromDisk(true);
     (async () => {
       const snap = await loadFavoritesSnapshot();
-      if (!cancelled && snap?.tests) {
-        setCachedTests(snap.tests);
-        setCachedAt(snap.cachedAt || null);
+      if (!cancelled) {
+        if (snap?.tests) {
+          setCachedTests(snap.tests);
+          setCachedAt(snap.cachedAt || null);
+        }
+        setIsLoadingFromDisk(false);
       }
     })();
     return () => { cancelled = true; };
@@ -105,7 +110,7 @@ export function OfflineCacheProvider({ children }) {
   }, [cachedTests]);
 
   return (
-    <OfflineCacheContext.Provider value={{ cachedTests, cachedAt, isRefreshing, refreshSnapshot, getCachedTest }}>
+    <OfflineCacheContext.Provider value={{ cachedTests, cachedAt, isRefreshing, isLoadingFromDisk, refreshSnapshot, getCachedTest }}>
       {children}
     </OfflineCacheContext.Provider>
   );

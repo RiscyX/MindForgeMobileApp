@@ -1278,11 +1278,6 @@ export default function TestScreen() {
               )}
               </View>
 
-            {currentQuestion?.explanation ? (
-              <View className="mt-2">
-                <Text className="text-mf-secondary font-solway text-xs">{currentQuestion.explanation}</Text>
-              </View>
-            ) : null}
             </Animated.View>
           </View>
 

@@ -251,6 +251,7 @@ export const translations = {
       banner: 'Offline mode — showing cached content',
       savedForSync: 'Your result has been saved and will sync automatically when you reconnect.',
       notAvailable: 'This test is not available offline. Connect to the internet to cache your favorites.',
+      cachedData: 'Showing cached data from',
     },
     profile: {
       title: 'Profile',
@@ -571,6 +572,7 @@ export const translations = {
       banner: 'Offline mód — gyorsítótárból töltve',
       savedForSync: 'Az eredményed el lett mentve, és automatikusan szinkronizálódik, ha visszatér a kapcsolat.',
       notAvailable: 'Ez a teszt offline nem érhető el. Csatlakozz az internethez, hogy a kedvenceket gyorsítótárba mentse.',
+      cachedData: 'Gyorsítótárból megjelenítve:',
     },
     profile: {
       title: 'Profil',
