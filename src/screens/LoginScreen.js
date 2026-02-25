@@ -64,7 +64,7 @@ export default function LoginScreen() {
             <Text className="text-mf-secondary mb-2 ml-1 text-sm font-solway-bold uppercase">{t('login.email')}</Text>
             <TextInput 
               className="w-full bg-mf-secondary/10 text-mf-text p-4 rounded-xl border border-mf-secondary/20 focus:border-mf-primary font-solway"
-              placeholder="ricsi@mindforge.app" 
+              placeholder="you@example.com" 
               placeholderTextColor="#5b5b6b"
               keyboardType="email-address"
               autoCapitalize="none"

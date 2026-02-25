@@ -713,11 +713,37 @@ export default function TestScreen() {
               const v = answersPayload[q.id];
               if (!v) continue;
               if (v.answer_id) {
+                // Single-choice: check is_correct flag on the selected answer.
                 const correctAnswer = (q.answers || []).find((a) => a.is_correct);
                 if (correctAnswer && String(v.answer_id) === String(correctAnswer.id)) {
                   correct++;
                 }
+              } else if (v.pairs && typeof v.pairs === 'object') {
+                // Matching: group answers by match_group, build correct left→right map.
+                const groups = {};
+                for (const a of (q.answers || [])) {
+                  if (a.match_group == null) continue;
+                  if (!groups[a.match_group]) groups[a.match_group] = { left: null, right: null };
+                  const side = String(a.match_side || '').toLowerCase();
+                  if (side === 'left') groups[a.match_group].left = String(a.id);
+                  else if (side === 'right') groups[a.match_group].right = String(a.id);
+                }
+                const correctPairsMap = {};
+                for (const g of Object.values(groups)) {
+                  if (g.left && g.right) correctPairsMap[g.left] = g.right;
+                }
+                const userPairs = v.pairs;
+                const totalPairs = Object.keys(correctPairsMap).length;
+                if (totalPairs > 0) {
+                  let pairsCorrect = 0;
+                  for (const [leftId, rightId] of Object.entries(correctPairsMap)) {
+                    if (String(userPairs[leftId]) === String(rightId)) pairsCorrect++;
+                  }
+                  // Count as correct if all pairs matched.
+                  if (pairsCorrect === totalPairs) correct++;
+                }
               }
+              // text type: cannot be evaluated locally without AI — skip.
             }
             setAttemptSummary({ total_questions: total, correct_answers: correct, score: total > 0 ? Math.round((correct / total) * 100) : 0 });
             isSubmittingRef.current = false;

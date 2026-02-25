@@ -2,6 +2,8 @@ import { createContext, useCallback, useEffect, useMemo, useRef, useState } from
 import { ApiError, apiRequest } from '../services/httpClient';
 import { loginRequest, logoutRequest, meRequest, refreshRequest, registerRequest } from '../services/authApi';
 import { tokenStorage } from '../services/secureStorage';
+import { getOnlineStatus, subscribeOnlineStatus } from '../services/networkStatus';
+import { syncPendingResults } from '../services/offlineSyncQueue';
 
 export const AuthContext = createContext(null);
 
@@ -204,32 +206,45 @@ export function AuthProvider({ children }) {
         expiresInRef.current = stored.expiresIn ?? null;
         refreshExpiresInRef.current = stored.refreshExpiresIn ?? null;
 
-        const refreshed = await refresh(stored.refreshToken);
-        if (refreshed?.accessToken) {
-          try {
-            const me = await meRequest({ accessToken: refreshed.accessToken });
-            const meUser = me?.user || refreshed.user || stored.user || null;
-            if (meUser) {
-              await persistSession({
-                nextAccessToken: refreshed.accessToken,
-                nextRefreshToken: refreshed.refreshToken,
-                nextTokenType: refreshed.tokenType,
-                nextExpiresIn: refreshed.expiresIn,
-                nextRefreshExpiresIn: refreshed.refreshExpiresIn,
-                nextUser: meUser,
-              });
-            }
-          } catch (error) {
-            if (__DEV__) {
-              console.warn('[auth/bootstrap] /auth/me failed:', error?.message || error);
+        // If the device is offline, skip the network refresh entirely.
+        // The stored session is already hydrated above — the user stays logged in.
+        if (getOnlineStatus()) {
+          const refreshed = await refresh(stored.refreshToken);
+          if (refreshed?.accessToken) {
+            try {
+              const me = await meRequest({ accessToken: refreshed.accessToken });
+              const meUser = me?.user || refreshed.user || stored.user || null;
+              if (meUser) {
+                await persistSession({
+                  nextAccessToken: refreshed.accessToken,
+                  nextRefreshToken: refreshed.refreshToken,
+                  nextTokenType: refreshed.tokenType,
+                  nextExpiresIn: refreshed.expiresIn,
+                  nextRefreshExpiresIn: refreshed.refreshExpiresIn,
+                  nextUser: meUser,
+                });
+              }
+            } catch (error) {
+              if (__DEV__) {
+                console.warn('[auth/bootstrap] /auth/me failed:', error?.message || error);
+              }
             }
           }
+        } else if (__DEV__) {
+          console.log('[auth/bootstrap] Offline — skipping token refresh, using stored session');
         }
       } catch (error) {
-        if (__DEV__) {
-          console.warn('[auth/bootstrap] session restore failed:', error?.message || error);
+        // Only clear the session for non-network errors.
+        // A TypeError means the device is offline; keep the stored session.
+        const isNetworkError = error instanceof TypeError;
+        if (!isNetworkError) {
+          if (__DEV__) {
+            console.warn('[auth/bootstrap] session restore failed:', error?.message || error);
+          }
+          await clearSession();
+        } else if (__DEV__) {
+          console.warn('[auth/bootstrap] Offline during bootstrap, keeping stored session');
         }
-        await clearSession();
       } finally {
         setIsBootstrapping(false);
       }
@@ -328,6 +343,23 @@ export function AuthProvider({ children }) {
       }
     }
   }, [accessToken, clearSession, refresh]);
+
+  const authFetchRef = useRef(null);
+  authFetchRef.current = authFetch;
+
+  // When connectivity is restored, flush any pending offline quiz results.
+  useEffect(() => {
+    const unsub = subscribeOnlineStatus((online) => {
+      if (!online) return;
+      if (!accessTokenRef.current) return;
+      syncPendingResults({ authFetch: (...args) => authFetchRef.current(...args) }).catch((e) => {
+        if (__DEV__) {
+          console.warn('[auth] offline sync failed:', e?.message);
+        }
+      });
+    });
+    return unsub;
+  }, []);
 
   const setUserProfile = useCallback(async (nextUser) => {
     const mergedUser = {
