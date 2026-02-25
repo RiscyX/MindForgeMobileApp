@@ -42,7 +42,7 @@ export const loginRequest = async ({ email, password, lang = 'en' }) => {
   }
 };
 
-export const registerRequest = async ({ email, password, passwordConfirm, lang = 'en', deviceName = 'MindForge Mobile App' }) => {
+export const registerRequest = async ({ email, password, passwordConfirm, lang = 'en', deviceName = 'MindForge' }) => {
   return apiRequest('/auth/register', {
     method: 'POST',
     headers: AUTH_JSON_HEADERS,

@@ -910,7 +910,10 @@ export default function CreateTestScreen() {
 
                 {(draft.questions || []).map((q, qIndex) => {
                   const qType = String(q?.type || 'multiple_choice');
-                  const qText = String(q?.translations?.[activeLangKey] || '');
+                  const rawQTrans = q?.translations?.[activeLangKey];
+                  const qText = rawQTrans !== null && typeof rawQTrans === 'object'
+                    ? String(rawQTrans?.content || '')
+                    : String(rawQTrans || '');
                   const answers = Array.isArray(q?.answers) ? q.answers : [];
 
                   return (
@@ -955,7 +958,13 @@ export default function CreateTestScreen() {
                       <TextInput
                         className="w-full bg-mf-bg/60 text-mf-text p-3 rounded-xl border border-mf-secondary/25 font-solway"
                         value={qText}
-                        onChangeText={(v) => updateDraftAt(['questions', qIndex, 'translations', activeLangKey], v)}
+                        onChangeText={(v) => {
+                          const existing = draft?.questions?.[qIndex]?.translations?.[activeLangKey];
+                          const updated = existing !== null && typeof existing === 'object'
+                            ? { ...existing, content: v }
+                            : v;
+                          updateDraftAt(['questions', qIndex, 'translations', activeLangKey], updated);
+                        }}
                       />
 
                       {qType === 'text' ? null : (
