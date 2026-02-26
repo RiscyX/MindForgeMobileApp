@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Easing, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Easing, Platform, Pressable, ScrollView, Text, TextInput, View, Vibration } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -12,6 +12,73 @@ import { appendToSyncQueue } from '../services/offlineCache';
 
 // Generates a simple unique id for offline queue items (no external dep).
 const generateLocalId = () => `offline_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+const LANGUAGE_ID_BY_CODE = {
+  hu: 1,
+  en: 2,
+};
+
+const firstNonEmptyString = (...values) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value;
+    }
+  }
+  return '';
+};
+
+const resolveLocalizedText = (entity, language, preferredDirectKeys = ['content'], fallbackDirectKeys = []) => {
+  if (!entity) return '';
+
+  const langCode = String(language || '').toLowerCase();
+  const langId = LANGUAGE_ID_BY_CODE[langCode];
+  const langCandidates = [langCode, String(langId || ''), 'en', '2'].filter(Boolean);
+
+  const translationContainers = [
+    entity.translations,
+    entity.translation,
+    entity.question_translations,
+    entity.answer_translations,
+  ];
+
+  for (const container of translationContainers) {
+    if (!container) continue;
+
+    if (Array.isArray(container)) {
+      const directMatch = container.find((row) => {
+        const rowLangId = String(row?.language_id || row?.lang_id || '');
+        const rowLang = String(row?.language || row?.lang || '').toLowerCase();
+        return (langId && rowLangId === String(langId)) || (langCode && rowLang === langCode);
+      });
+      const fallbackMatch = directMatch || container[0];
+      const resolved = firstNonEmptyString(
+        fallbackMatch?.content,
+        fallbackMatch?.text,
+        fallbackMatch?.title,
+        fallbackMatch?.description,
+        fallbackMatch?.explanation,
+      );
+      if (resolved) return resolved;
+    } else if (typeof container === 'object') {
+      for (const key of langCandidates) {
+        const row = container[key];
+        if (typeof row === 'string' && row.trim()) return row;
+        const resolved = firstNonEmptyString(
+          row?.content,
+          row?.text,
+          row?.title,
+          row?.description,
+          row?.explanation,
+        );
+        if (resolved) return resolved;
+      }
+    }
+  }
+
+  const preferred = preferredDirectKeys.map((key) => entity?.[key]);
+  const fallback = fallbackDirectKeys.map((key) => entity?.[key]);
+  return firstNonEmptyString(...preferred, ...fallback);
+};
 
 export default function TestScreen() {
   const navigation = useNavigation();
@@ -274,8 +341,18 @@ export default function TestScreen() {
     const fromReview = currentQuestion?.matching;
     if (fromReview && Array.isArray(fromReview.left) && Array.isArray(fromReview.right)) {
       return {
-        left: fromReview.left.map((item) => ({ id: String(item?.id), content: String(item?.content || '') })).filter((item) => item.id),
-        right: fromReview.right.map((item) => ({ id: String(item?.id), content: String(item?.content || '') })).filter((item) => item.id),
+        left: fromReview.left
+          .map((item) => ({
+            id: String(item?.id),
+            content: resolveLocalizedText(item, language, ['content', 'text', 'label', 'translated_content'], ['source_text']),
+          }))
+          .filter((item) => item.id),
+        right: fromReview.right
+          .map((item) => ({
+            id: String(item?.id),
+            content: resolveLocalizedText(item, language, ['content', 'text', 'label', 'translated_content'], ['source_text']),
+          }))
+          .filter((item) => item.id),
         correctPairs: normalizePairs(fromReview.correct_pairs || {}),
       };
     }
@@ -291,7 +368,7 @@ export default function TestScreen() {
       if (!id) {
         return;
       }
-      const content = String(answer?.content || '');
+      const content = resolveLocalizedText(answer, language, ['content', 'text', 'translated_content'], ['source_text']);
       const sideRaw = String(answer?.match_side || '').toLowerCase();
       const side = sideRaw === 'left' || sideRaw === 'right' ? sideRaw : (index % 2 === 0 ? 'left' : 'right');
       const group = Number(answer?.match_group || 0);
@@ -319,7 +396,7 @@ export default function TestScreen() {
     });
 
     return { left, right, correctPairs };
-  }, [currentQuestion, isMatchingQuestion, normalizePairs]);
+  }, [currentQuestion, isMatchingQuestion, language, normalizePairs]);
 
   const selectedPairs = useMemo(() => {
     if (!isMatchingQuestion) {
@@ -434,18 +511,34 @@ export default function TestScreen() {
   }, [currentQuestion, isMatchingQuestion, isTextQuestion, matchingModel.left, selectedAnswerId, selectedPairs, selectedText]);
 
   const triggerHaptic = useCallback(async (kind) => {
+    const fallbackMs = kind === 'error' ? 28 : kind === 'success' ? 18 : 12;
     try {
       if (kind === 'success') {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (Platform.OS === 'android') {
+          Vibration.vibrate(fallbackMs);
+        }
         return;
       }
       if (kind === 'error') {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        if (Platform.OS === 'android') {
+          Vibration.vibrate(fallbackMs);
+        }
         return;
       }
-      await Haptics.selectionAsync();
+      if (kind === 'link') {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } else {
+        await Haptics.selectionAsync();
+      }
+      if (Platform.OS === 'android') {
+        Vibration.vibrate(fallbackMs);
+      }
     } catch {
-      // Ignore unavailable haptics on unsupported devices.
+      if (Platform.OS === 'android') {
+        Vibration.vibrate(fallbackMs);
+      }
     }
   }, []);
 
@@ -531,7 +624,7 @@ export default function TestScreen() {
   }, [currentQuestion, currentQuestionCorrectAnswer, selectedAnswerId]);
 
   const getAnswerLabel = useCallback((question, answer) => {
-    const raw = (answer?.content ?? '').toString();
+    const raw = resolveLocalizedText(answer, language, ['content', 'text', 'translated_content'], ['source_text']);
     const normalized = raw.trim().toLowerCase();
     const normalizedAscii = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
@@ -554,7 +647,7 @@ export default function TestScreen() {
     }
 
     return raw;
-  }, [t]);
+  }, [language, t]);
 
   const handlePickAnswer = (answerId) => {
     if (!currentQuestion) {
@@ -605,7 +698,7 @@ export default function TestScreen() {
       };
     });
 
-    triggerHaptic(rightId ? 'selection' : 'error');
+    triggerHaptic(rightId ? 'link' : 'error');
   };
 
   const handleSelectMatchingLeft = (leftId) => {
@@ -653,6 +746,21 @@ export default function TestScreen() {
   const handleClearMatchingPair = (leftId) => {
     handlePickMatchingPair(leftId, null);
     setActiveMatchingLeftId(String(leftId));
+    triggerHaptic('error');
+  };
+
+  const handleResetMatching = () => {
+    if (!currentQuestion || !isMatchingQuestion) {
+      return;
+    }
+
+    const firstLeftId = matchingModel.left[0] ? String(matchingModel.left[0].id) : null;
+
+    setAnswersByQuestionId((prev) => ({
+      ...prev,
+      [currentQuestion.id]: { pairs: {} },
+    }));
+    setActiveMatchingLeftId(firstLeftId);
     triggerHaptic('error');
   };
 
@@ -956,7 +1064,9 @@ export default function TestScreen() {
 
             <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5 shadow-xl">
               <Animated.View style={{ opacity: animOpacity, transform: [{ translateY: animTranslate }] }}>
-                <Text className="text-mf-text font-solway-bold text-xl">{currentQuestion?.content || ''}</Text>
+                <Text className="text-mf-text font-solway-bold text-xl">
+                  {resolveLocalizedText(currentQuestion, language, ['content', 'question', 'title', 'translated_content'], ['source_text']) || ''}
+                </Text>
 
                 <View className="mt-4">
                 {isTextQuestion ? (
@@ -1109,7 +1219,9 @@ export default function TestScreen() {
 
           <View className="mt-6 rounded-2xl border border-mf-secondary/20 bg-mf-secondary/10 p-5 shadow-xl">
             <Animated.View style={{ opacity: animOpacity, transform: [{ translateY: animTranslate }] }}>
-              <Text className="text-mf-text font-solway-bold text-xl">{currentQuestion?.content || ''}</Text>
+              <Text className="text-mf-text font-solway-bold text-xl">
+                {resolveLocalizedText(currentQuestion, language, ['content', 'question', 'title', 'translated_content'], ['source_text']) || ''}
+              </Text>
 
               <View className="mt-4">
               {isTextQuestion ? (
@@ -1144,11 +1256,18 @@ export default function TestScreen() {
                     <Text className="text-mf-text font-solway-bold text-sm">
                       {t('test.matchingProgress', { current: matchingProgress.current, total: Math.max(matchingProgress.total, 1) })}
                     </Text>
-                    <Pressable onPress={handleToggleOverview}>
-                      <Text className="text-mf-secondary font-solway-bold text-sm">
-                        {showMatchingOverview ? t('test.matchingHideOverview') : t('test.matchingShowOverview')}
-                      </Text>
-                    </Pressable>
+                    <View className="flex-row items-center">
+                      <Pressable onPress={handleToggleOverview}>
+                        <Text className="text-mf-secondary font-solway-bold text-sm">
+                          {showMatchingOverview ? t('test.matchingHideOverview') : t('test.matchingShowOverview')}
+                        </Text>
+                      </Pressable>
+                      <Pressable className="ml-3" onPress={handleResetMatching}>
+                        <Text className="text-red-300 font-solway-bold text-sm">
+                          {t('test.matchingClear')}
+                        </Text>
+                      </Pressable>
+                    </View>
                   </View>
 
                   {activeMatchingLeft ? (

@@ -9,6 +9,7 @@ import {
   Solway_700Bold,
   Solway_800ExtraBold,
 } from '@expo-google-fonts/solway';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/context/AuthContext';
 import { LanguageProvider } from './src/context/LanguageContext';
 import { NetworkProvider, useNetworkStatus } from './src/context/NetworkContext';
@@ -59,20 +60,22 @@ export default function App() {
   }
 
   return (
-    <AppBackground>
-      <LanguageProvider>
-        <AuthProvider>
-          <NetworkProvider>
-            <OfflineCacheProvider>
-              <FavoritesProvider>
-                <SyncOnReconnect />
-                <OfflineBanner />
-                <AppNavigator />
-              </FavoritesProvider>
-            </OfflineCacheProvider>
-          </NetworkProvider>
-        </AuthProvider>
-      </LanguageProvider>
-    </AppBackground>
+    <SafeAreaProvider>
+      <AppBackground>
+        <LanguageProvider>
+          <AuthProvider>
+            <NetworkProvider>
+              <OfflineCacheProvider>
+                <FavoritesProvider>
+                  <SyncOnReconnect />
+                  <OfflineBanner />
+                  <AppNavigator />
+                </FavoritesProvider>
+              </OfflineCacheProvider>
+            </NetworkProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </AppBackground>
+    </SafeAreaProvider>
   );
 }
