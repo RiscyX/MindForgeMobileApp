@@ -10,6 +10,15 @@ import { useOfflineCache } from './OfflineCacheContext';
 
 const TestActionsContext = createContext(null);
 
+const resolveOfflineQuestions = (cached) => {
+  if (!cached || typeof cached !== 'object') return [];
+  if (Array.isArray(cached.questions)) return cached.questions;
+  if (Array.isArray(cached.items)) return cached.items;
+  if (Array.isArray(cached.test?.questions)) return cached.test.questions;
+  if (Array.isArray(cached.test_questions)) return cached.test_questions;
+  return [];
+};
+
 export function TestActionsProvider({ children }) {
   const navigation = useNavigation();
   const { isAuthenticated, authFetch, logout } = useAuth();
@@ -35,7 +44,8 @@ export function TestActionsProvider({ children }) {
     // ── Offline branch ────────────────────────────────────────────────────────
     if (!getOnlineStatus()) {
       const cached = getCachedTest(testId);
-      if (!cached || !Array.isArray(cached.questions) || cached.questions.length === 0) {
+      const offlineQuestions = resolveOfflineQuestions(cached);
+      if (!cached || offlineQuestions.length === 0) {
         Alert.alert(
           'Offline',
           'This test is not available offline. Connect to the internet and open the app to cache your favorites.',
@@ -45,7 +55,7 @@ export function TestActionsProvider({ children }) {
       navigation.navigate('Test', {
         testId,
         attemptId: null,
-        offlineQuestions: cached.questions,
+        offlineQuestions,
         offlineTest: cached,
       });
       return;
@@ -136,7 +146,8 @@ export function TestActionsProvider({ children }) {
 
     if (!getOnlineStatus()) {
       const cached = getCachedTest(testId);
-      if (!cached || !Array.isArray(cached.questions) || cached.questions.length === 0) {
+      const offlineQuestions = resolveOfflineQuestions(cached);
+      if (!cached || offlineQuestions.length === 0) {
         Alert.alert(
           'Offline',
           'This test is not available offline. Connect to the internet and open the app to cache your favorites.',
@@ -147,7 +158,7 @@ export function TestActionsProvider({ children }) {
       navigation.navigate('Test', {
         testId,
         attemptId: null,
-        offlineQuestions: cached.questions,
+        offlineQuestions,
         offlineTest: cached,
         practiceMode: true,
       });

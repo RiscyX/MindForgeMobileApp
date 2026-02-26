@@ -106,6 +106,11 @@ export function FavoritesProvider({ children }) {
       } else {
         await addFavoriteTestRequest({ authFetch, testId });
       }
+
+      // Re-sync favorites list and refresh offline snapshot after successful toggle.
+      if (getOnlineStatus()) {
+        await load();
+      }
     } catch (e) {
       // Check if the server rejected due to limit (for when backend enforces it too).
       const isLimitError =
@@ -150,7 +155,7 @@ export function FavoritesProvider({ children }) {
     } finally {
       pendingRef.current.delete(testId);
     }
-  }, [authFetch, favoriteIds, t]);
+  }, [authFetch, favoriteIds, load, t]);
 
   const isFavorite = useCallback((testId) => favoriteIds.has(String(testId ?? '')), [favoriteIds]);
 
