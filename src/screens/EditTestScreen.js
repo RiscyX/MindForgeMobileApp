@@ -16,7 +16,7 @@ import { useLanguage } from '../hooks/useLanguage';
 import { fetchCreatorTestMetadataRequest } from '../services/creatorAiApi';
 import {
   getTestForEditDetailRequest,
-  putTestRequest,
+  patchTestRequest,
 } from '../services/testManagementApi';
 
 // Language ID mapping: 1 = HU, 2 = EN (backend convention)
@@ -29,6 +29,33 @@ const TYPE_TRUE_FALSE = 'true_false';
 const TYPE_TEXT = 'text';
 const TYPE_MATCHING = 'matching';
 
+const isTextQuestionType = (type) => {
+  const normalized = String(type || '').toLowerCase();
+  return normalized.includes('text') || normalized.includes('free') || normalized.includes('open');
+};
+const isMatchingQuestionType = (type) => {
+  const normalized = String(type || '').toLowerCase();
+  return normalized.includes('matching') || normalized.includes('match');
+};
+const isTrueFalseQuestionType = (type) => {
+  const normalized = String(type || '').toLowerCase();
+  return normalized.includes('true_false') || normalized.includes('boolean') || normalized === 'tf';
+};
+const isMultipleChoiceQuestionType = (type) => {
+  const normalized = String(type || '').toLowerCase();
+  return normalized.includes('multiple_choice')
+    || normalized.includes('single_choice')
+    || normalized.includes('choice')
+    || normalized.includes('multiple');
+};
+const normalizeQuestionType = (type) => {
+  if (isMatchingQuestionType(type)) return TYPE_MATCHING;
+  if (String(type || '').toLowerCase().includes('text') || String(type || '').toLowerCase().includes('free') || String(type || '').toLowerCase().includes('open')) return TYPE_TEXT;
+  if (isTrueFalseQuestionType(type)) return TYPE_TRUE_FALSE;
+  if (isMultipleChoiceQuestionType(type)) return TYPE_MULTIPLE_CHOICE;
+  return TYPE_MULTIPLE_CHOICE;
+};
+
 const ALL_TYPES = [TYPE_MULTIPLE_CHOICE, TYPE_TRUE_FALSE, TYPE_TEXT, TYPE_MATCHING];
 const TYPE_LABELS = {
   [TYPE_MULTIPLE_CHOICE]: 'MC',
@@ -37,214 +64,519 @@ const TYPE_LABELS = {
   [TYPE_MATCHING]: 'MTH',
 };
 
-// Build a fresh question structure for a given type and language
-const newQuestion = (type, langKey) => {
-  const base = {
-    question_type: type,
-    is_active: true,
-    source_type: 'human',
-    question_translations: { [langKey]: { content: '', explanation: '' } },
-  };
+const SOURCE_HUMAN = 'human';
 
-  if (type === TYPE_TRUE_FALSE) {
-    base.answers = [
-      { is_correct: true, answer_translations: { [langKey]: { content: 'True' } } },
-      { is_correct: false, answer_translations: { [langKey]: { content: 'False' } } },
-    ];
-    return base;
-  }
-
-  if (type === TYPE_TEXT) {
-    base.answers = [
-      { is_correct: true, answer_translations: { [langKey]: { content: '' } } },
-    ];
-    return base;
-  }
-
-  if (type === TYPE_MATCHING) {
-    base.answers = [
-      { is_correct: true, match_side: 'left', match_group: 1, answer_translations: { [langKey]: { content: '' } } },
-      { is_correct: true, match_side: 'right', match_group: 1, answer_translations: { [langKey]: { content: '' } } },
-      { is_correct: true, match_side: 'left', match_group: 2, answer_translations: { [langKey]: { content: '' } } },
-      { is_correct: true, match_side: 'right', match_group: 2, answer_translations: { [langKey]: { content: '' } } },
-      { is_correct: true, match_side: 'left', match_group: 3, answer_translations: { [langKey]: { content: '' } } },
-      { is_correct: true, match_side: 'right', match_group: 3, answer_translations: { [langKey]: { content: '' } } },
-    ];
-    return base;
-  }
-
-  // multiple_choice
-  base.answers = [
-    { is_correct: true, answer_translations: { [langKey]: { content: '' } } },
-    { is_correct: false, answer_translations: { [langKey]: { content: '' } } },
-  ];
-  return base;
+const normalizeSourceType = (value, fallback = SOURCE_HUMAN) => {
+  const next = String(value || '').trim();
+  return next || fallback;
 };
 
-// Convert API question/answer data into internal editing format
-const apiQuestionToForm = (q) => {
-  // question_translations: array → object keyed by language_id
-  const qtMap = {};
-  (q.question_translations || []).forEach((qt) => {
-    qtMap[String(qt.language_id)] = { id: qt.id, content: qt.content || '', explanation: qt.explanation || '' };
-  });
+const normalizeMatchSide = (value) => {
+  const side = String(value || '').toLowerCase();
+  return side === 'left' || side === 'right' ? side : null;
+};
 
-  const answers = (q.answers || []).map((a) => {
-    const atMap = {};
-    (a.answer_translations || []).forEach((at) => {
-      atMap[String(at.language_id)] = { id: at.id, content: at.content || '' };
-    });
+const normalizePosition = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const toNullableId = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  return value;
+};
+
+const buildQuestionTranslationSkeleton = (languageId, sourceType = SOURCE_HUMAN) => ({
+  id: null,
+  language_id: Number(languageId),
+  content: '',
+  explanation: '',
+  source_type: normalizeSourceType(sourceType, SOURCE_HUMAN),
+});
+
+const buildAnswerTranslationSkeleton = (languageId, sourceType = SOURCE_HUMAN) => ({
+  id: null,
+  language_id: Number(languageId),
+  content: '',
+  source_type: normalizeSourceType(sourceType, SOURCE_HUMAN),
+});
+
+const buildAnswerNode = ({
+  id = null,
+  isCorrect = false,
+  position = 1,
+  sourceType = SOURCE_HUMAN,
+  matchSide = null,
+  matchGroup = null,
+  translations = [],
+}) => ({
+  id: toNullableId(id),
+  is_correct: Boolean(isCorrect),
+  position: normalizePosition(position, 1),
+  source_type: normalizeSourceType(sourceType, SOURCE_HUMAN),
+  match_side: normalizeMatchSide(matchSide),
+  match_group: matchGroup != null && Number.isFinite(Number(matchGroup)) ? Number(matchGroup) : null,
+  answer_translations: translations,
+});
+
+const buildDefaultAnswers = (questionType, activeLangId, questionSourceType = SOURCE_HUMAN) => {
+  const answerSourceType = normalizeSourceType(questionSourceType, SOURCE_HUMAN);
+  const normalizedType = normalizeQuestionType(questionType);
+
+  if (normalizedType === TYPE_TRUE_FALSE) {
+    return [
+      buildAnswerNode({
+        isCorrect: true,
+        position: 1,
+        sourceType: answerSourceType,
+        translations: [{ ...buildAnswerTranslationSkeleton(activeLangId, answerSourceType), content: 'True' }],
+      }),
+      buildAnswerNode({
+        isCorrect: false,
+        position: 2,
+        sourceType: answerSourceType,
+        translations: [{ ...buildAnswerTranslationSkeleton(activeLangId, answerSourceType), content: 'False' }],
+      }),
+    ];
+  }
+
+  if (normalizedType === TYPE_TEXT) {
+    return [
+      buildAnswerNode({
+        isCorrect: true,
+        position: 1,
+        sourceType: answerSourceType,
+        translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)],
+      }),
+    ];
+  }
+
+  if (normalizedType === TYPE_MATCHING) {
+    return [
+      buildAnswerNode({ isCorrect: true, position: 1, sourceType: answerSourceType, matchSide: 'left', matchGroup: 1, translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)] }),
+      buildAnswerNode({ isCorrect: true, position: 2, sourceType: answerSourceType, matchSide: 'right', matchGroup: 1, translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)] }),
+      buildAnswerNode({ isCorrect: true, position: 3, sourceType: answerSourceType, matchSide: 'left', matchGroup: 2, translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)] }),
+      buildAnswerNode({ isCorrect: true, position: 4, sourceType: answerSourceType, matchSide: 'right', matchGroup: 2, translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)] }),
+      buildAnswerNode({ isCorrect: true, position: 5, sourceType: answerSourceType, matchSide: 'left', matchGroup: 3, translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)] }),
+      buildAnswerNode({ isCorrect: true, position: 6, sourceType: answerSourceType, matchSide: 'right', matchGroup: 3, translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)] }),
+    ];
+  }
+
+  return [
+    buildAnswerNode({
+      isCorrect: true,
+      position: 1,
+      sourceType: answerSourceType,
+      translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)],
+    }),
+    buildAnswerNode({
+      isCorrect: false,
+      position: 2,
+      sourceType: answerSourceType,
+      translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)],
+    }),
+  ];
+};
+
+const resequenceAnswers = (answers, questionType, questionSourceType = SOURCE_HUMAN) => {
+  const qSource = normalizeSourceType(questionSourceType, SOURCE_HUMAN);
+  const normalizedType = normalizeQuestionType(questionType);
+  return (answers || []).map((a, idx) => {
+    const aSource = normalizeSourceType(a?.source_type, qSource);
+    const normalized = {
+      id: toNullableId(a?.id),
+      is_correct: normalizedType === TYPE_TEXT ? true : Boolean(a?.is_correct),
+      position: idx + 1,
+      source_type: aSource,
+      match_side: normalizedType === TYPE_MATCHING ? normalizeMatchSide(a?.match_side) : null,
+      match_group: normalizedType === TYPE_MATCHING && a?.match_group != null && Number.isFinite(Number(a.match_group))
+        ? Number(a.match_group)
+        : null,
+      answer_translations: (a?.answer_translations || []).map((at) => ({
+        id: toNullableId(at?.id),
+        language_id: Number(at?.language_id),
+        content: String(at?.content || ''),
+        source_type: normalizeSourceType(at?.source_type, aSource),
+      })),
+    };
+    return normalized;
+  });
+};
+
+const resequenceQuestions = (questions) => {
+  return (questions || []).map((q, idx) => {
+    const qSource = normalizeSourceType(q?.source_type, SOURCE_HUMAN);
     return {
-      id: a.id,
-      is_correct: Boolean(a.is_correct),
-      match_side: a.match_side || null,
-      match_group: a.match_group != null ? Number(a.match_group) : null,
-      answer_translations: atMap,
+      id: toNullableId(q?.id),
+      question_type: normalizeQuestionType(q?.question_type),
+      position: idx + 1,
+      source_type: qSource,
+      is_active: q?.is_active !== false,
+      question_translations: (q?.question_translations || []).map((qt) => ({
+        id: toNullableId(qt?.id),
+        language_id: Number(qt?.language_id),
+        content: String(qt?.content || ''),
+        explanation: String(qt?.explanation || ''),
+        source_type: normalizeSourceType(qt?.source_type, qSource),
+      })),
+      answers: resequenceAnswers(q?.answers || [], normalizeQuestionType(q?.question_type), qSource),
+      ...(q?.category_id ? { category_id: q.category_id } : {}),
+    };
+  });
+};
+
+const ensureQuestionTranslation = (question, languageId) => {
+  const langId = Number(languageId);
+  if (!Array.isArray(question.question_translations)) {
+    question.question_translations = [];
+  }
+  let row = question.question_translations.find((qt) => Number(qt.language_id) === langId);
+  if (!row) {
+    row = buildQuestionTranslationSkeleton(langId, question.source_type);
+    question.question_translations.push(row);
+  }
+  row.source_type = normalizeSourceType(row.source_type, question.source_type || SOURCE_HUMAN);
+  return row;
+};
+
+const ensureAnswerTranslation = (question, answer, languageId) => {
+  const langId = Number(languageId);
+  if (!Array.isArray(answer.answer_translations)) {
+    answer.answer_translations = [];
+  }
+  let row = answer.answer_translations.find((at) => Number(at.language_id) === langId);
+  if (!row) {
+    row = buildAnswerTranslationSkeleton(langId, answer.source_type || question.source_type || SOURCE_HUMAN);
+    answer.answer_translations.push(row);
+  }
+  row.source_type = normalizeSourceType(
+    row.source_type,
+    answer.source_type || question.source_type || SOURCE_HUMAN,
+  );
+  return row;
+};
+
+const getQuestionTranslation = (question, languageId) => {
+  const langId = Number(languageId);
+  return (question?.question_translations || []).find((qt) => Number(qt.language_id) === langId) || null;
+};
+
+const getAnswerTranslation = (answer, languageId) => {
+  const langId = Number(languageId);
+  return (answer?.answer_translations || []).find((at) => Number(at.language_id) === langId) || null;
+};
+
+const newQuestion = (type, languageId) => {
+  const sourceType = SOURCE_HUMAN;
+  return {
+    id: null,
+    question_type: type,
+    position: 1,
+    source_type: sourceType,
+    is_active: true,
+    question_translations: [buildQuestionTranslationSkeleton(languageId, sourceType)],
+    answers: buildDefaultAnswers(type, languageId, sourceType),
+  };
+};
+
+const apiQuestionToEditorState = (q, fallbackLangId) => {
+  const questionSourceType = normalizeSourceType(q?.source_type, SOURCE_HUMAN);
+  const translations = (q?.question_translations || []).map((qt) => ({
+    id: toNullableId(qt?.id),
+    language_id: Number(qt?.language_id),
+    content: String(qt?.content || ''),
+    explanation: String(qt?.explanation || ''),
+    source_type: normalizeSourceType(qt?.source_type, questionSourceType),
+  }));
+
+  if (!translations.some((qt) => Number(qt.language_id) === Number(fallbackLangId))) {
+    translations.push(buildQuestionTranslationSkeleton(fallbackLangId, questionSourceType));
+  }
+
+  const answers = (q?.answers || []).map((a, idx) => {
+    const answerSourceType = normalizeSourceType(a?.source_type, questionSourceType);
+    const answerTranslations = (a?.answer_translations || []).map((at) => ({
+      id: toNullableId(at?.id),
+      language_id: Number(at?.language_id),
+      content: String(at?.content || ''),
+      source_type: normalizeSourceType(at?.source_type, answerSourceType),
+    }));
+
+    if (!answerTranslations.some((at) => Number(at.language_id) === Number(fallbackLangId))) {
+      answerTranslations.push(buildAnswerTranslationSkeleton(fallbackLangId, answerSourceType));
+    }
+
+    return {
+      id: toNullableId(a?.id),
+      is_correct: Boolean(a?.is_correct),
+      position: normalizePosition(a?.position, idx + 1),
+      source_type: answerSourceType,
+      match_side: normalizeMatchSide(a?.match_side),
+      match_group: a?.match_group != null && Number.isFinite(Number(a.match_group)) ? Number(a.match_group) : null,
+      answer_translations: answerTranslations,
     };
   });
 
   return {
-    id: q.id,
-    question_type: q.question_type,
-    position: q.position,
-    is_active: q.is_active !== false,
-    source_type: q.source_type || 'human',
-    question_translations: qtMap,
+    id: toNullableId(q?.id),
+    question_type: normalizeQuestionType(q?.question_type),
+    position: normalizePosition(q?.position, 1),
+    source_type: questionSourceType,
+    is_active: q?.is_active !== false,
+    question_translations: translations,
     answers,
+    ...(q?.category_id ? { category_id: q.category_id } : {}),
   };
 };
 
-// Convert internal form data to API payload format
-const formToPayload = (form, languageId) => {
-  const testTranslations = Object.entries(form.testTranslations || {}).map(([langId, tt]) => {
+const buildTestUpdatePayload = (editorState) => {
+  const testTranslations = Object.entries(editorState.testTranslations || {}).map(([langId, tt]) => {
     const row = {
       language_id: Number(langId),
-      title: tt.title || '',
-      description: tt.description || '',
+      title: String(tt?.title || ''),
+      description: String(tt?.description || ''),
     };
-    if (tt.id) row.id = tt.id;
+    if (tt?.id !== null && tt?.id !== undefined) row.id = tt.id;
     return row;
   });
 
-  const questions = (form.questions || []).map((q, idx) => {
-    const questionTranslations = Object.entries(q.question_translations || {}).map(([langId, qt]) => {
+  const normalizedQuestions = resequenceQuestions(editorState.questions || []);
+
+  const questions = normalizedQuestions.map((q) => {
+    const normalizedType = normalizeQuestionType(q.question_type);
+    const questionSourceType = normalizeSourceType(q.source_type, SOURCE_HUMAN);
+
+    const questionTranslations = (q.question_translations || []).map((qt) => {
       const row = {
-        language_id: Number(langId),
-        content: qt.content || '',
-        explanation: qt.explanation || '',
-        source_type: q.source_type || 'human',
+        language_id: Number(qt.language_id),
+        content: String(qt.content || ''),
+        explanation: String(qt.explanation || ''),
+        source_type: normalizeSourceType(qt.source_type, questionSourceType),
       };
-      if (qt.id) row.id = qt.id;
+      if (qt.id !== null && qt.id !== undefined) row.id = qt.id;
       return row;
     });
 
-    const answers = (q.answers || []).map((a) => {
-      const answerTranslations = Object.entries(a.answer_translations || {}).map(([langId, at]) => {
+    const answers = (q.answers || []).map((a, idx) => {
+      const answerSourceType = normalizeSourceType(a.source_type, questionSourceType);
+      const answerTranslations = (a.answer_translations || []).map((at) => {
         const row = {
-          language_id: Number(langId),
-          content: at.content || '',
-          source_type: q.source_type || 'human',
+          language_id: Number(at.language_id),
+          content: String(at.content || ''),
+          source_type: normalizeSourceType(at.source_type, answerSourceType),
         };
-        if (at.id) row.id = at.id;
+        if (at.id !== null && at.id !== undefined) row.id = at.id;
         return row;
       });
 
       const answerRow = {
-        is_correct: Boolean(a.is_correct),
-        source_type: q.source_type || 'human',
+        is_correct: normalizedType === TYPE_TEXT ? true : Boolean(a.is_correct),
+        position: idx + 1,
+        source_type: answerSourceType,
         answer_translations: answerTranslations,
       };
-      if (a.id) answerRow.id = a.id;
-      if (a.match_side) {
-        answerRow.match_side = a.match_side;
-        answerRow.match_group = a.match_group;
+      if (a.id !== null && a.id !== undefined) answerRow.id = a.id;
+
+      if (normalizedType === TYPE_MATCHING) {
+        answerRow.match_side = normalizeMatchSide(a.match_side) || (idx % 2 === 0 ? 'left' : 'right');
+        const fallbackGroup = Math.floor(idx / 2) + 1;
+        answerRow.match_group = a.match_group != null && Number.isFinite(Number(a.match_group))
+          ? Number(a.match_group)
+          : fallbackGroup;
       }
+
       return answerRow;
     });
 
     const qRow = {
-      question_type: q.question_type,
+      question_type: normalizedType,
       is_active: q.is_active !== false,
-      source_type: q.source_type || 'human',
-      position: idx + 1,
+      source_type: questionSourceType,
+      position: q.position,
       question_translations: questionTranslations,
       answers,
     };
-    if (q.id) qRow.id = q.id;
+
+    if (q.id !== null && q.id !== undefined) qRow.id = q.id;
     if (q.category_id) qRow.category_id = q.category_id;
     return qRow;
   });
 
   return {
-    category_id: form.categoryId ? Number(form.categoryId) : null,
-    difficulty_id: form.difficultyId ? Number(form.difficultyId) : null,
-    is_public: Boolean(form.isPublic),
+    category_id: editorState.categoryId ? Number(editorState.categoryId) : null,
+    difficulty_id: editorState.difficultyId ? Number(editorState.difficultyId) : null,
+    is_public: Boolean(editorState.isPublic),
     test_translations: testTranslations,
     questions,
   };
 };
 
-// Validate the form data; returns array of error strings
-const validate = (form, activeLangKey, t) => {
-  const errors = [];
-
-  // At least one translation with a title
-  const hasTitleInSomeLang = Object.values(form.testTranslations || {}).some(
-    (tt) => (tt.title || '').trim() !== '',
-  );
-  if (!hasTitleInSomeLang) {
-    errors.push(t('editTest.validationTitleRequired'));
+const redactPayloadForDebug = (input) => {
+  if (Array.isArray(input)) {
+    return input.map((value) => redactPayloadForDebug(value));
+  }
+  if (!input || typeof input !== 'object') {
+    return input;
   }
 
-  (form.questions || []).forEach((q) => {
-    const qText = (q.question_translations?.[activeLangKey]?.content || '').trim();
-    if (!qText) {
-      errors.push(t('editTest.validationQuestionRequired'));
+  const out = {};
+  Object.keys(input).forEach((key) => {
+    const value = input[key];
+    if (typeof value === 'string' && ['content', 'explanation', 'title', 'description'].includes(key)) {
+      out[key] = `<redacted:${value.length}>`;
+      return;
+    }
+    out[key] = redactPayloadForDebug(value);
+  });
+  return out;
+};
+
+const flattenDetails = (input, prefix = '', out = []) => {
+  if (Array.isArray(input)) {
+    input.forEach((value, idx) => {
+      const nextPrefix = prefix ? `${prefix}.${idx}` : String(idx);
+      flattenDetails(value, nextPrefix, out);
+    });
+    return out;
+  }
+
+  if (input && typeof input === 'object') {
+    Object.entries(input).forEach(([key, value]) => {
+      const normalizedKey = key.replace(/\[(\d+)\]/g, '.$1');
+      const nextPrefix = prefix ? `${prefix}.${normalizedKey}` : normalizedKey;
+      flattenDetails(value, nextPrefix, out);
+    });
+    return out;
+  }
+
+  out.push({ key: prefix || 'global', message: String(input || '') });
+  return out;
+};
+
+const parse422ErrorDetails = (error, fallbackMessage) => {
+  const details = error?.data?.error?.details ?? error?.data?.details;
+  const globalErrors = [];
+  const fieldErrors = {};
+
+  if (details === null || details === undefined) {
+    if (fallbackMessage) globalErrors.push(String(fallbackMessage));
+    return { globalErrors, fieldErrors };
+  }
+
+  flattenDetails(details).forEach(({ key, message }) => {
+    if (!message) return;
+    if (!key || key === 'global') {
+      globalErrors.push(message);
+      return;
+    }
+    const aliases = [
+      key,
+      key.replace(/\.question_translations\.\d+\.content$/g, '.question.content'),
+      key.replace(/\.answer_translations\.\d+\.content$/g, '.content'),
+      key.replace(/\.answer_translations\.\d+\.source_text$/g, '.content'),
+      key.replace(/\.match_side$/g, '.matching.pairs'),
+      key.replace(/\.match_group$/g, '.matching.pairs'),
+    ];
+    aliases.forEach((alias) => {
+      if (!fieldErrors[alias]) {
+        fieldErrors[alias] = message;
+      }
+    });
+  });
+
+  if (!globalErrors.length && !Object.keys(fieldErrors).length && fallbackMessage) {
+    globalErrors.push(String(fallbackMessage));
+  }
+
+  return { globalErrors, fieldErrors };
+};
+
+const getFieldError = (fieldErrors, candidates) => {
+  for (const key of candidates) {
+    if (fieldErrors[key]) return fieldErrors[key];
+  }
+  const keys = Object.keys(fieldErrors || {});
+  for (const candidate of candidates) {
+    const matched = keys.find((k) => k.endsWith(candidate));
+    if (matched && fieldErrors[matched]) return fieldErrors[matched];
+  }
+  return null;
+};
+
+const validateEditorState = (editorState, t) => {
+  const globalErrors = [];
+  const fieldErrors = {};
+
+  const hasTitleInSomeLang = Object.values(editorState.testTranslations || {}).some(
+    (tt) => String(tt?.title || '').trim() !== '',
+  );
+  if (!hasTitleInSomeLang) {
+    globalErrors.push(t('editTest.validationTitleRequired'));
+  }
+
+  (editorState.questions || []).forEach((q, qIdx) => {
+    const hasQuestionText = (q.question_translations || []).some(
+      (qt) => String(qt?.content || '').trim() !== '',
+    );
+    if (!hasQuestionText) {
+      fieldErrors[`questions.${qIdx}.question.content`] = t('editTest.validationQuestionRequired');
+      globalErrors.push(t('editTest.validationQuestionRequired'));
     }
 
-    if (q.question_type === TYPE_MATCHING) {
-      // Validate matching pairs: need ≥ 3 groups, each with exactly 1 left and 1 right
+    if (isMultipleChoiceQuestionType(q.question_type) || isTrueFalseQuestionType(q.question_type)) {
+      const hasCorrect = (q.answers || []).some((a) => Boolean(a?.is_correct));
+      if (!hasCorrect) {
+        fieldErrors[`questions.${qIdx}.answers.correct`] = t('editTest.validationCorrectRequired');
+        globalErrors.push(t('editTest.validationCorrectRequired'));
+      }
+    }
+
+    if (isTextQuestionType(q.question_type)) {
+      const hasTextAnswer = (q.answers || []).some((a) =>
+        (a.answer_translations || []).some((at) => String(at?.content || '').trim() !== ''),
+      );
+      if (!hasTextAnswer) {
+        fieldErrors[`questions.${qIdx}.answers.text`] = t('editTest.validationAnswerRequired');
+        globalErrors.push(t('editTest.validationAnswerRequired'));
+      }
+    }
+
+    if (!isTextQuestionType(q.question_type)) {
+      (q.answers || []).forEach((a, aIdx) => {
+        const hasAnswerText = (a.answer_translations || []).some(
+          (at) => String(at?.content || '').trim() !== '',
+        );
+        if (!hasAnswerText) {
+          fieldErrors[`questions.${qIdx}.answers.${aIdx}.content`] = t('editTest.validationAnswerRequired');
+          globalErrors.push(t('editTest.validationAnswerRequired'));
+        }
+      });
+    }
+
+    if (isMatchingQuestionType(q.question_type)) {
       const groups = {};
       (q.answers || []).forEach((a) => {
-        const g = a.match_group;
-        const s = a.match_side;
-        if (!g || !s) return;
-        if (!groups[g]) groups[g] = { left: 0, right: 0 };
-        groups[g][s] = (groups[g][s] || 0) + 1;
+        const side = normalizeMatchSide(a?.match_side);
+        const group = Number(a?.match_group);
+        if (!side || !Number.isFinite(group) || group <= 0) {
+          return;
+        }
+        if (!groups[group]) groups[group] = { left: 0, right: 0 };
+        groups[group][side] += 1;
       });
-      const groupKeys = Object.keys(groups);
-      const validPairs = groupKeys.filter(
-        (g) => groups[g].left === 1 && groups[g].right === 1,
-      );
-      if (validPairs.length < 3) {
-        errors.push(t('editTest.validationMatchPairs'));
-      }
-    } else if (q.question_type !== TYPE_TEXT) {
-      const hasCorrect = (q.answers || []).some((a) => a.is_correct);
-      if (!hasCorrect) {
-        errors.push(t('editTest.validationCorrectRequired'));
-      }
-    }
 
-    if (q.question_type !== TYPE_MATCHING) {
-      (q.answers || []).forEach((a) => {
-        const aText = (a.answer_translations?.[activeLangKey]?.content || '').trim();
-        if (!aText) {
-          errors.push(t('editTest.validationAnswerRequired'));
-        }
-      });
-    } else {
-      (q.answers || []).forEach((a) => {
-        const aText = (a.answer_translations?.[activeLangKey]?.content || '').trim();
-        if (!aText) {
-          errors.push(t('editTest.validationAnswerRequired'));
-        }
-      });
+      const validPairs = Object.values(groups).filter((g) => g.left === 1 && g.right === 1).length;
+      if (validPairs < 3) {
+        fieldErrors[`questions.${qIdx}.matching.pairs`] = t('editTest.validationMatchPairs');
+        globalErrors.push(t('editTest.validationMatchPairs'));
+      }
     }
   });
 
-  // Deduplicate
-  return [...new Set(errors)];
+  return {
+    globalErrors: [...new Set(globalErrors)],
+    fieldErrors,
+  };
 };
 
 export default function EditTestScreen() {
@@ -258,6 +590,7 @@ export default function EditTestScreen() {
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [validationErrors, setValidationErrors] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   // Active language for editing translations
   const [editLanguage, setEditLanguage] = useState(language || 'en');
@@ -309,7 +642,9 @@ export default function EditTestScreen() {
           difficultyId: testData.difficulty_id ?? null,
           isPublic: testData.is_public !== false,
           testTranslations: ttMap,
-          questions: (testData.questions || []).map(apiQuestionToForm),
+          questions: resequenceQuestions(
+            (testData.questions || []).map((q) => apiQuestionToEditorState(q, langCodeToId(language || 'en'))),
+          ),
         });
 
         setMetadata({
@@ -336,7 +671,9 @@ export default function EditTestScreen() {
   const updateForm = useCallback((updater) => {
     setForm((prev) => {
       const next = JSON.parse(JSON.stringify(prev));
-      return updater(next);
+      const updated = updater(next);
+      updated.questions = resequenceQuestions(updated.questions || []);
+      return updated;
     });
   }, []);
 
@@ -352,34 +689,45 @@ export default function EditTestScreen() {
 
   const setQuestionTranslationContent = useCallback((qIdx, langKey, field, value) => {
     updateForm((next) => {
-      if (!next.questions[qIdx].question_translations[langKey]) {
-        next.questions[qIdx].question_translations[langKey] = { content: '', explanation: '' };
-      }
-      next.questions[qIdx].question_translations[langKey][field] = value;
+      const q = next.questions[qIdx];
+      if (!q) return next;
+      const row = ensureQuestionTranslation(q, Number(langKey));
+      row[field] = value;
       return next;
     });
   }, [updateForm]);
 
   const setAnswerTranslationContent = useCallback((qIdx, aIdx, langKey, value) => {
     updateForm((next) => {
-      if (!next.questions[qIdx].answers[aIdx].answer_translations[langKey]) {
-        next.questions[qIdx].answers[aIdx].answer_translations[langKey] = { content: '' };
-      }
-      next.questions[qIdx].answers[aIdx].answer_translations[langKey].content = value;
+      const q = next.questions[qIdx];
+      const a = q?.answers?.[aIdx];
+      if (!q || !a) return next;
+      const row = ensureAnswerTranslation(q, a, Number(langKey));
+      row.content = value;
       return next;
     });
   }, [updateForm]);
 
   const toggleAnswerCorrect = useCallback((qIdx, aIdx) => {
     updateForm((next) => {
-      next.questions[qIdx].answers[aIdx].is_correct = !next.questions[qIdx].answers[aIdx].is_correct;
+      const q = next.questions[qIdx];
+      if (!q || !Array.isArray(q.answers) || !q.answers[aIdx]) return next;
+
+      if (isTrueFalseQuestionType(q.question_type)) {
+        q.answers.forEach((answer, idx) => {
+          answer.is_correct = idx === aIdx;
+        });
+        return next;
+      }
+
+      q.answers[aIdx].is_correct = !q.answers[aIdx].is_correct;
       return next;
     });
   }, [updateForm]);
 
   const addQuestion = useCallback(() => {
     updateForm((next) => {
-      next.questions.push(newQuestion(TYPE_MULTIPLE_CHOICE, activeLangKey));
+      next.questions.push(newQuestion(TYPE_MULTIPLE_CHOICE, Number(activeLangKey)));
       return next;
     });
   }, [activeLangKey, updateForm]);
@@ -394,9 +742,12 @@ export default function EditTestScreen() {
   const changeQuestionType = useCallback((qIdx, type) => {
     updateForm((next) => {
       const q = next.questions[qIdx];
+      if (!q) return next;
       const existingQT = q.question_translations;
-      const newQ = newQuestion(type, activeLangKey);
+      const newQ = newQuestion(type, Number(activeLangKey));
       newQ.id = q.id;
+      newQ.position = q.position;
+      newQ.is_active = q.is_active !== false;
       newQ.question_translations = existingQT;
       // Preserve source_type from original question
       newQ.source_type = q.source_type;
@@ -407,9 +758,18 @@ export default function EditTestScreen() {
 
   const addAnswer = useCallback((qIdx) => {
     updateForm((next) => {
+      const q = next.questions[qIdx];
+      if (!q) return next;
       next.questions[qIdx].answers.push({
         is_correct: false,
-        answer_translations: { [activeLangKey]: { content: '' } },
+        id: null,
+        position: (q.answers?.length || 0) + 1,
+        source_type: normalizeSourceType(q.source_type, SOURCE_HUMAN),
+        match_side: null,
+        match_group: null,
+        answer_translations: [
+          buildAnswerTranslationSkeleton(Number(activeLangKey), normalizeSourceType(q.source_type, SOURCE_HUMAN)),
+        ],
       });
       return next;
     });
@@ -424,20 +784,29 @@ export default function EditTestScreen() {
 
   const addMatchPair = useCallback((qIdx) => {
     updateForm((next) => {
-      const answers = next.questions[qIdx].answers;
+      const q = next.questions[qIdx];
+      if (!q) return next;
+      const answers = q.answers;
+      const answerSourceType = normalizeSourceType(q.source_type, SOURCE_HUMAN);
       const maxGroup = answers.reduce((m, a) => Math.max(m, a.match_group || 0), 0);
       const newGroup = maxGroup + 1;
       answers.push({
         is_correct: true,
+        id: null,
+        position: answers.length + 1,
+        source_type: answerSourceType,
         match_side: 'left',
         match_group: newGroup,
-        answer_translations: { [activeLangKey]: { content: '' } },
+        answer_translations: [buildAnswerTranslationSkeleton(Number(activeLangKey), answerSourceType)],
       });
       answers.push({
         is_correct: true,
+        id: null,
+        position: answers.length + 1,
+        source_type: answerSourceType,
         match_side: 'right',
         match_group: newGroup,
-        answer_translations: { [activeLangKey]: { content: '' } },
+        answer_translations: [buildAnswerTranslationSkeleton(Number(activeLangKey), answerSourceType)],
       });
       return next;
     });
@@ -452,34 +821,44 @@ export default function EditTestScreen() {
     });
   }, [updateForm]);
 
-  const setMatchAnswerField = useCallback((qIdx, aIdx, field, value) => {
-    updateForm((next) => {
-      next.questions[qIdx].answers[aIdx][field] = value;
-      return next;
-    });
-  }, [updateForm]);
-
   const handleSave = useCallback(async () => {
     setValidationErrors([]);
-    const errors = validate(form, activeLangKey, t);
-    if (errors.length > 0) {
-      setValidationErrors(errors);
+    setFieldErrors({});
+    const preflight = validateEditorState(form, t);
+    if (preflight.globalErrors.length > 0 || Object.keys(preflight.fieldErrors).length > 0) {
+      setValidationErrors(preflight.globalErrors);
+      setFieldErrors(preflight.fieldErrors);
       return;
     }
 
     setSaving(true);
     setErrorMessage(null);
     try {
-      const langId = langCodeToId(editLanguage);
-      const payload = formToPayload(form, langId);
-      await putTestRequest({ authFetch, testId, language: editLanguage, body: payload });
+      const payload = buildTestUpdatePayload(form);
+      if (__DEV__) {
+        console.log('[edit-test] update payload (redacted)', redactPayloadForDebug(payload));
+      }
+      await patchTestRequest({ authFetch, testId, body: payload });
       navigation.goBack();
     } catch (e) {
+      const apiCode = String(e?.data?.error?.code || '').toUpperCase();
+      if (e?.status === 422 || apiCode === 'TEST_UPDATE_FAILED') {
+        const parsed = parse422ErrorDetails(e, t('editTest.saveError'));
+        setValidationErrors(parsed.globalErrors);
+        setFieldErrors(parsed.fieldErrors);
+      }
+
+      if (__DEV__) {
+        const rawDetails = e?.data?.error?.details ?? e?.data?.details ?? null;
+        console.log('[edit-test] update error status/code', { status: e?.status, code: e?.data?.error?.code || null });
+        console.log('[edit-test] update error details (redacted)', redactPayloadForDebug(rawDetails));
+      }
+
       setErrorMessage(e?.data?.error?.message || e?.message || t('editTest.saveError'));
     } finally {
       setSaving(false);
     }
-  }, [authFetch, editLanguage, form, activeLangKey, navigation, t, testId]);
+  }, [authFetch, form, navigation, t, testId]);
 
   const currentTitle = useMemo(
     () => form.testTranslations?.[activeLangKey]?.title || '',
@@ -489,6 +868,15 @@ export default function EditTestScreen() {
   const currentDescription = useMemo(
     () => form.testTranslations?.[activeLangKey]?.description || '',
     [activeLangKey, form.testTranslations],
+  );
+
+  const titleFieldError = useMemo(
+    () => getFieldError(fieldErrors, [
+      `test_translations.${activeLangKey}.title`,
+      'test_translations.title',
+      'title',
+    ]),
+    [activeLangKey, fieldErrors],
   );
 
   if (loading) {
@@ -582,6 +970,7 @@ export default function EditTestScreen() {
               onChangeText={(v) => setTestTranslationField(activeLangKey, 'title', v)}
               placeholderTextColor="#8a89a2"
             />
+            {titleFieldError ? <Text className="text-red-300 font-solway mt-2">{titleFieldError}</Text> : null}
 
             <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mt-3 mb-1">
               {t('editTest.descriptionLabel')}
@@ -668,6 +1057,7 @@ export default function EditTestScreen() {
                 question={q}
                 qIdx={qIdx}
                 activeLangKey={activeLangKey}
+                fieldErrors={fieldErrors}
                 t={t}
                 onRemove={() => removeQuestion(qIdx)}
                 onChangeType={(type) => changeQuestionType(qIdx, type)}
@@ -678,7 +1068,6 @@ export default function EditTestScreen() {
                 onRemoveAnswer={(aIdx) => removeAnswer(qIdx, aIdx)}
                 onAddMatchPair={() => addMatchPair(qIdx)}
                 onRemoveMatchPair={(group) => removeMatchPair(qIdx, group)}
-                onMatchAnswerField={(aIdx, field, value) => setMatchAnswerField(qIdx, aIdx, field, value)}
                 onChangeAnswerSideText={(aIdx, value) => setAnswerTranslationContent(qIdx, aIdx, activeLangKey, value)}
               />
             ))}
@@ -722,6 +1111,7 @@ function QuestionEditor({
   question,
   qIdx,
   activeLangKey,
+  fieldErrors,
   t,
   onRemove,
   onChangeType,
@@ -732,11 +1122,20 @@ function QuestionEditor({
   onRemoveAnswer,
   onAddMatchPair,
   onRemoveMatchPair,
-  onMatchAnswerField,
   onChangeAnswerSideText,
 }) {
   const qType = question.question_type;
-  const qText = question.question_translations?.[activeLangKey]?.content || '';
+  const qTranslation = getQuestionTranslation(question, Number(activeLangKey));
+  const qText = qTranslation?.content || '';
+  const qTextError = getFieldError(fieldErrors, [
+    `questions.${qIdx}.question.${activeLangKey}.content`,
+    `questions.${qIdx}.question_translations.${activeLangKey}.content`,
+    `questions.${qIdx}.question.content`,
+  ]);
+  const matchingError = getFieldError(fieldErrors, [
+    `questions.${qIdx}.matching.pairs`,
+    `questions.${qIdx}.answers.matching`,
+  ]);
 
   return (
     <View className="mb-4 rounded-2xl border border-mf-secondary/20 bg-mf-bg/30 p-4">
@@ -782,6 +1181,7 @@ function QuestionEditor({
         placeholderTextColor="#8a89a2"
         multiline
       />
+      {qTextError ? <Text className="text-red-300 font-solway mb-2">{qTextError}</Text> : null}
 
       {/* Explanation */}
       <Text className="text-mf-secondary text-xs uppercase tracking-widest font-solway-bold mb-1">
@@ -789,28 +1189,34 @@ function QuestionEditor({
       </Text>
       <TextInput
         className="w-full rounded-xl border border-mf-secondary/25 bg-mf-bg/60 px-3 py-2 text-mf-text font-solway mb-3"
-        value={question.question_translations?.[activeLangKey]?.explanation || ''}
+        value={qTranslation?.explanation || ''}
         onChangeText={(v) => onChangeQuestionText('explanation', v)}
         placeholderTextColor="#8a89a2"
         multiline
       />
+      {matchingError && isMatchingQuestionType(qType) ? (
+        <Text className="text-red-300 font-solway mb-2">{matchingError}</Text>
+      ) : null}
 
       {/* Answers */}
-      {qType === TYPE_MATCHING ? (
+      {isMatchingQuestionType(qType) ? (
         <MatchingEditor
           question={question}
+          qIdx={qIdx}
           activeLangKey={activeLangKey}
+          fieldErrors={fieldErrors}
           t={t}
           onAddMatchPair={onAddMatchPair}
           onRemoveMatchPair={onRemoveMatchPair}
-          onMatchAnswerField={onMatchAnswerField}
           onChangeAnswerSideText={onChangeAnswerSideText}
         />
       ) : (
         <AnswerList
           question={question}
+          qIdx={qIdx}
           qType={qType}
           activeLangKey={activeLangKey}
+          fieldErrors={fieldErrors}
           t={t}
           onChangeAnswerText={onChangeAnswerText}
           onToggleCorrect={onToggleCorrect}
@@ -824,20 +1230,37 @@ function QuestionEditor({
 
 function AnswerList({
   question,
+  qIdx,
   qType,
   activeLangKey,
+  fieldErrors,
   t,
   onChangeAnswerText,
   onToggleCorrect,
   onAddAnswer,
   onRemoveAnswer,
 }) {
+  const correctError = getFieldError(fieldErrors, [`questions.${qIdx}.answers.correct`]);
+  const textAnswerError = getFieldError(fieldErrors, [`questions.${qIdx}.answers.text`]);
+
   return (
     <View>
+      {correctError && !isTextQuestionType(qType) ? (
+        <Text className="text-red-300 font-solway mb-2">{correctError}</Text>
+      ) : null}
+      {textAnswerError && isTextQuestionType(qType) ? (
+        <Text className="text-red-300 font-solway mb-2">{textAnswerError}</Text>
+      ) : null}
       {(question.answers || []).map((a, aIdx) => {
-        const aText = a.answer_translations?.[activeLangKey]?.content || '';
+        const aText = getAnswerTranslation(a, Number(activeLangKey))?.content || '';
         const isCorrect = Boolean(a.is_correct);
-        const isFixed = qType === TYPE_TRUE_FALSE || qType === TYPE_TEXT;
+        const isReadOnly = isTextQuestionType(qType);
+        const canEditAnswerText = !isTrueFalseQuestionType(qType) && !isTextQuestionType(qType);
+        const canRemove = qType === TYPE_MULTIPLE_CHOICE;
+        const answerError = getFieldError(fieldErrors, [
+          `questions.${qIdx}.answers.${aIdx}.${activeLangKey}.content`,
+          `questions.${qIdx}.answers.${aIdx}.content`,
+        ]);
 
         return (
           <View key={`a-${aIdx}`} className="mb-3 rounded-xl border border-mf-secondary/20 bg-mf-bg/50 p-3">
@@ -846,18 +1269,18 @@ function AnswerList({
                 {`A${aIdx + 1}`}
               </Text>
               <View className="flex-row items-center">
-                {qType !== TYPE_TEXT ? (
+                {!isTextQuestionType(qType) ? (
                   <Pressable
                     className={`mr-2 px-3 py-1 rounded-xl border ${isCorrect ? 'bg-green-500/15 border-green-500/35' : 'bg-mf-secondary/10 border-mf-secondary/25'}`}
-                    onPress={() => !isFixed && onToggleCorrect(aIdx)}
-                    disabled={isFixed}
+                    onPress={() => onToggleCorrect(aIdx)}
+                    disabled={isReadOnly}
                   >
                     <Text className={`${isCorrect ? 'text-green-200' : 'text-mf-secondary'} font-solway-bold text-xs uppercase tracking-widest`}>
                       {t('editTest.correct')}
                     </Text>
                   </Pressable>
                 ) : null}
-                {!isFixed ? (
+                {canRemove ? (
                   <Pressable
                     className="px-2 py-1 rounded-xl border border-red-500/30 bg-red-500/10"
                     onPress={() => onRemoveAnswer(aIdx)}
@@ -875,13 +1298,14 @@ function AnswerList({
               value={aText}
               onChangeText={(v) => onChangeAnswerText(aIdx, v)}
               placeholderTextColor="#8a89a2"
-              editable={!isFixed || qType === TYPE_TEXT}
+              editable={canEditAnswerText}
             />
+            {answerError ? <Text className="text-red-300 font-solway mt-2">{answerError}</Text> : null}
           </View>
         );
       })}
 
-      {(qType === TYPE_MULTIPLE_CHOICE || qType === TYPE_TEXT) ? (
+      {(qType === TYPE_MULTIPLE_CHOICE || isTextQuestionType(qType)) ? (
         <Pressable
           className="mt-1 px-4 py-2 rounded-xl border border-mf-primary/30 bg-mf-primary/10 self-start"
           onPress={onAddAnswer}
@@ -897,11 +1321,12 @@ function AnswerList({
 
 function MatchingEditor({
   question,
+  qIdx,
   activeLangKey,
+  fieldErrors,
   t,
   onAddMatchPair,
   onRemoveMatchPair,
-  onMatchAnswerField,
   onChangeAnswerSideText,
 }) {
   const answers = question.answers || [];
@@ -922,6 +1347,18 @@ function MatchingEditor({
         const pair = groups[groupNum];
         const leftItem = pair.find((a) => a.match_side === 'left');
         const rightItem = pair.find((a) => a.match_side === 'right');
+        const leftError = leftItem
+          ? getFieldError(fieldErrors, [
+            `questions.${qIdx}.answers.${leftItem._idx}.${activeLangKey}.content`,
+            `questions.${qIdx}.answers.${leftItem._idx}.content`,
+          ])
+          : null;
+        const rightError = rightItem
+          ? getFieldError(fieldErrors, [
+            `questions.${qIdx}.answers.${rightItem._idx}.${activeLangKey}.content`,
+            `questions.${qIdx}.answers.${rightItem._idx}.content`,
+          ])
+          : null;
 
         return (
           <View key={`group-${groupNum}`} className="mb-3 rounded-xl border border-mf-secondary/20 bg-mf-bg/50 p-3">
@@ -946,19 +1383,21 @@ function MatchingEditor({
                 <Text className="text-mf-secondary text-xs font-solway-bold mb-1">{t('editTest.left')}</Text>
                 <TextInput
                   className="rounded-xl border border-mf-secondary/25 bg-mf-bg/60 px-2 py-2 text-mf-text font-solway"
-                  value={leftItem ? (leftItem.answer_translations?.[activeLangKey]?.content || '') : ''}
+                  value={leftItem ? (getAnswerTranslation(leftItem, Number(activeLangKey))?.content || '') : ''}
                   onChangeText={(v) => leftItem && onChangeAnswerSideText(leftItem._idx, v)}
                   placeholderTextColor="#8a89a2"
                 />
+                {leftError ? <Text className="text-red-300 font-solway mt-1">{leftError}</Text> : null}
               </View>
               <View className="flex-1 ml-2">
                 <Text className="text-mf-secondary text-xs font-solway-bold mb-1">{t('editTest.right')}</Text>
                 <TextInput
                   className="rounded-xl border border-mf-secondary/25 bg-mf-bg/60 px-2 py-2 text-mf-text font-solway"
-                  value={rightItem ? (rightItem.answer_translations?.[activeLangKey]?.content || '') : ''}
+                  value={rightItem ? (getAnswerTranslation(rightItem, Number(activeLangKey))?.content || '') : ''}
                   onChangeText={(v) => rightItem && onChangeAnswerSideText(rightItem._idx, v)}
                   placeholderTextColor="#8a89a2"
                 />
+                {rightError ? <Text className="text-red-300 font-solway mt-1">{rightError}</Text> : null}
               </View>
             </View>
           </View>
