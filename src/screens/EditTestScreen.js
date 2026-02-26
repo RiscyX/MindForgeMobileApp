@@ -29,6 +29,33 @@ const TYPE_TRUE_FALSE = 'true_false';
 const TYPE_TEXT = 'text';
 const TYPE_MATCHING = 'matching';
 
+const isTextQuestionType = (type) => {
+  const normalized = String(type || '').toLowerCase();
+  return normalized.includes('text') || normalized.includes('free') || normalized.includes('open');
+};
+const isMatchingQuestionType = (type) => {
+  const normalized = String(type || '').toLowerCase();
+  return normalized.includes('matching') || normalized.includes('match');
+};
+const isTrueFalseQuestionType = (type) => {
+  const normalized = String(type || '').toLowerCase();
+  return normalized.includes('true_false') || normalized.includes('boolean') || normalized === 'tf';
+};
+const isMultipleChoiceQuestionType = (type) => {
+  const normalized = String(type || '').toLowerCase();
+  return normalized.includes('multiple_choice')
+    || normalized.includes('single_choice')
+    || normalized.includes('choice')
+    || normalized.includes('multiple');
+};
+const normalizeQuestionType = (type) => {
+  if (isMatchingQuestionType(type)) return TYPE_MATCHING;
+  if (String(type || '').toLowerCase().includes('text') || String(type || '').toLowerCase().includes('free') || String(type || '').toLowerCase().includes('open')) return TYPE_TEXT;
+  if (isTrueFalseQuestionType(type)) return TYPE_TRUE_FALSE;
+  if (isMultipleChoiceQuestionType(type)) return TYPE_MULTIPLE_CHOICE;
+  return TYPE_MULTIPLE_CHOICE;
+};
+
 const ALL_TYPES = [TYPE_MULTIPLE_CHOICE, TYPE_TRUE_FALSE, TYPE_TEXT, TYPE_MATCHING];
 const TYPE_LABELS = {
   [TYPE_MULTIPLE_CHOICE]: 'MC',
@@ -94,8 +121,9 @@ const buildAnswerNode = ({
 
 const buildDefaultAnswers = (questionType, activeLangId, questionSourceType = SOURCE_HUMAN) => {
   const answerSourceType = normalizeSourceType(questionSourceType, SOURCE_HUMAN);
+  const normalizedType = normalizeQuestionType(questionType);
 
-  if (questionType === TYPE_TRUE_FALSE) {
+  if (normalizedType === TYPE_TRUE_FALSE) {
     return [
       buildAnswerNode({
         isCorrect: true,
@@ -112,7 +140,7 @@ const buildDefaultAnswers = (questionType, activeLangId, questionSourceType = SO
     ];
   }
 
-  if (questionType === TYPE_TEXT) {
+  if (normalizedType === TYPE_TEXT) {
     return [
       buildAnswerNode({
         isCorrect: true,
@@ -123,7 +151,7 @@ const buildDefaultAnswers = (questionType, activeLangId, questionSourceType = SO
     ];
   }
 
-  if (questionType === TYPE_MATCHING) {
+  if (normalizedType === TYPE_MATCHING) {
     return [
       buildAnswerNode({ isCorrect: true, position: 1, sourceType: answerSourceType, matchSide: 'left', matchGroup: 1, translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)] }),
       buildAnswerNode({ isCorrect: true, position: 2, sourceType: answerSourceType, matchSide: 'right', matchGroup: 1, translations: [buildAnswerTranslationSkeleton(activeLangId, answerSourceType)] }),
@@ -152,15 +180,16 @@ const buildDefaultAnswers = (questionType, activeLangId, questionSourceType = SO
 
 const resequenceAnswers = (answers, questionType, questionSourceType = SOURCE_HUMAN) => {
   const qSource = normalizeSourceType(questionSourceType, SOURCE_HUMAN);
+  const normalizedType = normalizeQuestionType(questionType);
   return (answers || []).map((a, idx) => {
     const aSource = normalizeSourceType(a?.source_type, qSource);
     const normalized = {
       id: toNullableId(a?.id),
-      is_correct: Boolean(a?.is_correct),
+      is_correct: normalizedType === TYPE_TEXT ? true : Boolean(a?.is_correct),
       position: idx + 1,
       source_type: aSource,
-      match_side: questionType === TYPE_MATCHING ? normalizeMatchSide(a?.match_side) : null,
-      match_group: questionType === TYPE_MATCHING && a?.match_group != null && Number.isFinite(Number(a.match_group))
+      match_side: normalizedType === TYPE_MATCHING ? normalizeMatchSide(a?.match_side) : null,
+      match_group: normalizedType === TYPE_MATCHING && a?.match_group != null && Number.isFinite(Number(a.match_group))
         ? Number(a.match_group)
         : null,
       answer_translations: (a?.answer_translations || []).map((at) => ({
@@ -179,7 +208,7 @@ const resequenceQuestions = (questions) => {
     const qSource = normalizeSourceType(q?.source_type, SOURCE_HUMAN);
     return {
       id: toNullableId(q?.id),
-      question_type: q?.question_type || TYPE_MULTIPLE_CHOICE,
+      question_type: normalizeQuestionType(q?.question_type),
       position: idx + 1,
       source_type: qSource,
       is_active: q?.is_active !== false,
@@ -190,7 +219,7 @@ const resequenceQuestions = (questions) => {
         explanation: String(qt?.explanation || ''),
         source_type: normalizeSourceType(qt?.source_type, qSource),
       })),
-      answers: resequenceAnswers(q?.answers || [], q?.question_type, qSource),
+      answers: resequenceAnswers(q?.answers || [], normalizeQuestionType(q?.question_type), qSource),
       ...(q?.category_id ? { category_id: q.category_id } : {}),
     };
   });
@@ -290,7 +319,7 @@ const apiQuestionToEditorState = (q, fallbackLangId) => {
 
   return {
     id: toNullableId(q?.id),
-    question_type: q?.question_type || TYPE_MULTIPLE_CHOICE,
+    question_type: normalizeQuestionType(q?.question_type),
     position: normalizePosition(q?.position, 1),
     source_type: questionSourceType,
     is_active: q?.is_active !== false,
@@ -314,6 +343,7 @@ const buildTestUpdatePayload = (editorState) => {
   const normalizedQuestions = resequenceQuestions(editorState.questions || []);
 
   const questions = normalizedQuestions.map((q) => {
+    const normalizedType = normalizeQuestionType(q.question_type);
     const questionSourceType = normalizeSourceType(q.source_type, SOURCE_HUMAN);
 
     const questionTranslations = (q.question_translations || []).map((qt) => {
@@ -340,14 +370,14 @@ const buildTestUpdatePayload = (editorState) => {
       });
 
       const answerRow = {
-        is_correct: Boolean(a.is_correct),
+        is_correct: normalizedType === TYPE_TEXT ? true : Boolean(a.is_correct),
         position: idx + 1,
         source_type: answerSourceType,
         answer_translations: answerTranslations,
       };
       if (a.id !== null && a.id !== undefined) answerRow.id = a.id;
 
-      if (q.question_type === TYPE_MATCHING) {
+      if (normalizedType === TYPE_MATCHING) {
         answerRow.match_side = normalizeMatchSide(a.match_side) || (idx % 2 === 0 ? 'left' : 'right');
         const fallbackGroup = Math.floor(idx / 2) + 1;
         answerRow.match_group = a.match_group != null && Number.isFinite(Number(a.match_group))
@@ -359,7 +389,7 @@ const buildTestUpdatePayload = (editorState) => {
     });
 
     const qRow = {
-      question_type: q.question_type,
+      question_type: normalizedType,
       is_active: q.is_active !== false,
       source_type: questionSourceType,
       position: q.position,
@@ -493,7 +523,7 @@ const validateEditorState = (editorState, t) => {
       globalErrors.push(t('editTest.validationQuestionRequired'));
     }
 
-    if (q.question_type !== TYPE_TEXT) {
+    if (isMultipleChoiceQuestionType(q.question_type) || isTrueFalseQuestionType(q.question_type)) {
       const hasCorrect = (q.answers || []).some((a) => Boolean(a?.is_correct));
       if (!hasCorrect) {
         fieldErrors[`questions.${qIdx}.answers.correct`] = t('editTest.validationCorrectRequired');
@@ -501,7 +531,7 @@ const validateEditorState = (editorState, t) => {
       }
     }
 
-    if (q.question_type === TYPE_TEXT) {
+    if (isTextQuestionType(q.question_type)) {
       const hasTextAnswer = (q.answers || []).some((a) =>
         (a.answer_translations || []).some((at) => String(at?.content || '').trim() !== ''),
       );
@@ -511,7 +541,7 @@ const validateEditorState = (editorState, t) => {
       }
     }
 
-    if (q.question_type !== TYPE_TEXT) {
+    if (!isTextQuestionType(q.question_type)) {
       (q.answers || []).forEach((a, aIdx) => {
         const hasAnswerText = (a.answer_translations || []).some(
           (at) => String(at?.content || '').trim() !== '',
@@ -523,7 +553,7 @@ const validateEditorState = (editorState, t) => {
       });
     }
 
-    if (q.question_type === TYPE_MATCHING) {
+    if (isMatchingQuestionType(q.question_type)) {
       const groups = {};
       (q.answers || []).forEach((a) => {
         const side = normalizeMatchSide(a?.match_side);
@@ -680,7 +710,17 @@ export default function EditTestScreen() {
 
   const toggleAnswerCorrect = useCallback((qIdx, aIdx) => {
     updateForm((next) => {
-      next.questions[qIdx].answers[aIdx].is_correct = !next.questions[qIdx].answers[aIdx].is_correct;
+      const q = next.questions[qIdx];
+      if (!q || !Array.isArray(q.answers) || !q.answers[aIdx]) return next;
+
+      if (isTrueFalseQuestionType(q.question_type)) {
+        q.answers.forEach((answer, idx) => {
+          answer.is_correct = idx === aIdx;
+        });
+        return next;
+      }
+
+      q.answers[aIdx].is_correct = !q.answers[aIdx].is_correct;
       return next;
     });
   }, [updateForm]);
@@ -1154,12 +1194,12 @@ function QuestionEditor({
         placeholderTextColor="#8a89a2"
         multiline
       />
-      {matchingError && qType === TYPE_MATCHING ? (
+      {matchingError && isMatchingQuestionType(qType) ? (
         <Text className="text-red-300 font-solway mb-2">{matchingError}</Text>
       ) : null}
 
       {/* Answers */}
-      {qType === TYPE_MATCHING ? (
+      {isMatchingQuestionType(qType) ? (
         <MatchingEditor
           question={question}
           qIdx={qIdx}
@@ -1205,16 +1245,18 @@ function AnswerList({
 
   return (
     <View>
-      {correctError && qType !== TYPE_TEXT ? (
+      {correctError && !isTextQuestionType(qType) ? (
         <Text className="text-red-300 font-solway mb-2">{correctError}</Text>
       ) : null}
-      {textAnswerError && qType === TYPE_TEXT ? (
+      {textAnswerError && isTextQuestionType(qType) ? (
         <Text className="text-red-300 font-solway mb-2">{textAnswerError}</Text>
       ) : null}
       {(question.answers || []).map((a, aIdx) => {
         const aText = getAnswerTranslation(a, Number(activeLangKey))?.content || '';
         const isCorrect = Boolean(a.is_correct);
-        const isFixed = qType === TYPE_TRUE_FALSE || qType === TYPE_TEXT;
+        const isReadOnly = isTextQuestionType(qType);
+        const canEditAnswerText = !isTrueFalseQuestionType(qType) && !isTextQuestionType(qType);
+        const canRemove = qType === TYPE_MULTIPLE_CHOICE;
         const answerError = getFieldError(fieldErrors, [
           `questions.${qIdx}.answers.${aIdx}.${activeLangKey}.content`,
           `questions.${qIdx}.answers.${aIdx}.content`,
@@ -1227,18 +1269,18 @@ function AnswerList({
                 {`A${aIdx + 1}`}
               </Text>
               <View className="flex-row items-center">
-                {qType !== TYPE_TEXT ? (
+                {!isTextQuestionType(qType) ? (
                   <Pressable
                     className={`mr-2 px-3 py-1 rounded-xl border ${isCorrect ? 'bg-green-500/15 border-green-500/35' : 'bg-mf-secondary/10 border-mf-secondary/25'}`}
-                    onPress={() => !isFixed && onToggleCorrect(aIdx)}
-                    disabled={isFixed}
+                    onPress={() => onToggleCorrect(aIdx)}
+                    disabled={isReadOnly}
                   >
                     <Text className={`${isCorrect ? 'text-green-200' : 'text-mf-secondary'} font-solway-bold text-xs uppercase tracking-widest`}>
                       {t('editTest.correct')}
                     </Text>
                   </Pressable>
                 ) : null}
-                {!isFixed ? (
+                {canRemove ? (
                   <Pressable
                     className="px-2 py-1 rounded-xl border border-red-500/30 bg-red-500/10"
                     onPress={() => onRemoveAnswer(aIdx)}
@@ -1256,14 +1298,14 @@ function AnswerList({
               value={aText}
               onChangeText={(v) => onChangeAnswerText(aIdx, v)}
               placeholderTextColor="#8a89a2"
-              editable={!isFixed || qType === TYPE_TEXT}
+              editable={canEditAnswerText}
             />
             {answerError ? <Text className="text-red-300 font-solway mt-2">{answerError}</Text> : null}
           </View>
         );
       })}
 
-      {(qType === TYPE_MULTIPLE_CHOICE || qType === TYPE_TEXT) ? (
+      {(qType === TYPE_MULTIPLE_CHOICE || isTextQuestionType(qType)) ? (
         <Pressable
           className="mt-1 px-4 py-2 rounded-xl border border-mf-primary/30 bg-mf-primary/10 self-start"
           onPress={onAddAnswer}

@@ -2,7 +2,7 @@
   "expo": {
     "name": "MindForge",
     "slug": "mindforge",
-    "version": "0.3.2",
+    "version": "0.3.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "rs.ac.su.vts.stud.undefined",
-      "versionCode": 5,
+      "versionCode": 6,
       "permissions": [
         "VIBRATE"
       ],
